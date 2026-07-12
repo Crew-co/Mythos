@@ -26,10 +26,12 @@ jobs:
           chmod +x ./gradlew
           ./gradlew build --no-daemon
 
-      # Single-module build — the plugin jar (the shaded one) is in the root build/libs.
+      # NOTE: this is a multi-module build — the plugin jar is produced in
+      # plugin/build/libs, NOT the root build/libs. (A root-level path here is
+      # what causes "No files were found with the provided path".)
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4
         with:
           name: plugin-jar
-          path: build/libs/Mythos-*.jar
+          path: plugin/build/libs/*.jar
           if-no-files-found: error

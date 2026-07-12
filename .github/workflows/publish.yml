@@ -38,6 +38,6 @@ jobs:
       - name: Release the plugin jar
         uses: softprops/action-gh-release@v2
         with:
-          files: build/libs/Mythos-*.jar   # single-module: shaded jar in root build/libs
+          files: plugin/build/libs/*.jar   # multi-module: jar lives here
           generate_release_notes: true
           fail_on_unmatched_files: true

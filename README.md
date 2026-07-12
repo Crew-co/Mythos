@@ -1,76 +1,74 @@
-# Mythos
+# Mythos — Host
 
-**A Greek mythology engine for Folia.**
-
-Roles, spirits, eras, powers, realms, a narrator, a chronicle — and **not one line of Greek mythology in
-the plugin itself**. Chaos, Kronos and Achilles are addons, and they are the only things that are.
-
-📖 **[Read the wiki →](https://github.com/Crew-co/Mythos/wiki)**
-
----
-
-## What it actually is
-
-A **role** is a name somebody can hold. There are eight in the Age of Chaos, and everyone else in the
-world is a **spirit** — bodiless, in a queue, earning essence by watching history happen and waiting for
-a mantle to fall vacant.
-
-An **era** is a chapter with objectives. When the last one is struck, the world advances to whatever era
-declared itself next — usually registered by a jar the current one has never heard of. The old story's
-epilogue plays, the world goes dark and holds still, and the next story's prologue begins.
-
-**Every story is a separate repository, a separate jar, and a separate release cycle.** They do not
-import each other. Delete one and the chain re-links itself around the hole.
+The host plugin. A fork of [FoliaPluginTemplate-Addon-Based-Version](https://github.com/Crew-co/FoliaPluginTemplate-Addon-Based-Version)
+with **no mythology in it at all**: it loads addon jars, and that's the whole job.
 
 ```
-chaos → titanomachy → olympian-order → the-abduction → theft-of-fire
-  → ages-of-man → the-heroic-age → the-labours → the-golden-fleece
+mythos-host/
+├── addon-api/   Addon, AddonContext, AddonSchedulers, @Command, CommandContext   (PUBLISHED)
+└── plugin/      the loader, the classloaders, the command framework
 ```
 
-## The nine stories
+The Greek mythology lives in four other repos:
 
-| Addon                                                                     | Era | |
-|---------------------------------------------------------------------------|---|---|
-| [EraOfCreation](https://github.com/Crew-co/Mythos-EraOfCreation)          | `chaos` | eight seats. The Titans cannot be claimed — they are **born**, and only Gaia can bear them. |
-| [Titanomachy](https://github.com/Crew-co/Mythos-Titanomachy)              | `titanomachy` | Kronos's stomach is **a world**, and the gods he ate are in it, together. |
-| [OlympianOrder](https://github.com/Crew-co/Mythos-OlympianOrder)          | `olympian-order` | the lots are drawn **blind** — and a god's powers only work in the domain his hand closed on. |
-| [ChthonicRealm](https://github.com/Crew-co/Mythos-ChthonicRealm)          | `the-abduction` | death becomes a place. **The spirit queue now runs through a player's hands**, and he charges. |
-| [TheftOfFire](https://github.com/Crew-co/Mythos-TheftOfFire)              | `theft-of-fire` | it **cannot finish its own story**. Prometheus waits on the rock for a jar that doesn't exist yet. |
-| [AgesOfMan](https://github.com/Crew-co/Mythos-AgesOfMan)                  | `ages-of-man` | the flood. Everyone dies at once, and two people throw rocks over their shoulders to bring them back **in order**. |
-| [Perseus](https://github.com/Crew-co/Mythos-Perseus)                      | `the-heroic-age` | Medusa is a player. **She kills by being looked at.** |
-| [LaboursOfHeracles](https://github.com/Crew-co/Mytrhos-LaboursOfHeracles) | `the-labours` | the twelfth labour needs **Hades — a player — to say yes**, and he may not. |
-| [Argonautica](https://github.com/Crew-co/Mythos-Argonautica)              | `the-golden-fleece` | fifty players on one boat, and **Medea can simply refuse**. |
+| Repo | What it is |
+|---|---|
+| **MythosCore** | the engine: roles, spirits, eras, powers, profiles. Publishes its own API. |
+| **EraOfCreation** | story #1 — Chaos, the Primordials, the sickle |
+| **Titanomachy** | story #2 — Kronos, the stone, the war |
+| *(next)* | one repo per myth, all the way to the Oresteia |
 
-## Install
+Each is a standalone [FoliaAddonTemplate](https://github.com/Crew-co/FoliaAddonTemplate)
+project. This repo never knows they exist.
 
-1. `Mythos-0.1.0.jar` → `plugins/`
-2. Story jars → `plugins/Mythos/addons/`
-3. Restart.
+## Two changes from the template
 
-Requires **Folia 1.21.11** and **Java 21**. See **[Getting Started](https://github.com/Crew-co/Mythos/wiki/Getting-Started)**.
+### 1. Addon classloaders can see their `depends:`
 
-## Writing a story
+**This is the change that makes the whole project possible.** In the stock template,
+addon classloaders are siblings — parent is the host, and no addon can see a class
+inside another addon's jar. So no addon could ever publish an API for other addons to
+build on, and anything shared had to be shoved into the host's `addon-api`, which
+defeats the point of having a host template at all.
 
-```kotlin
-class TrojanWarAddon : AddonBase() {
-    override fun onEnable() {
-        val mythos = Mythos.from(context)          // no depends: — the engine is the plugin
+`AddonClassLoader` now delegates, in order: **parent (host, Folia, Kotlin stdlib) → its
+own jar → the classloaders of the addons named in `depends:`**. The class is defined by
+the *dependency's* loader, so there's exactly one copy and `instanceof` works across
+addons — the same guarantee the host already gave for its own API. Dependency lookups
+reach only into that addon's own jar (`findOwnClass`), never onwards, so they can't loop.
 
-        mythos.eras.register(TROJAN_WAR)           // naming the era that FOLLOWS it
-        mythos.roles.register(ACHILLES)
-        mythos.powers.register(RagePower())
-        context.registerListener(WarListener())
-    }
-}
+Which means MythosCore can ship `net.crewco.mythos.api.*` in its own jar, and
+EraOfCreation can `compileOnly` it and `depends: [ MythosCore ]`, and the host stays
+completely generic — reusable for a project that has nothing to do with Greece.
+
+### 2. A service-registry leak, fixed
+
+`HostAddonContext` kept its services in a `companion object` and never removed them on
+unload, so after `/addons reload` every service still pointed at an impl loaded by a
+dead classloader. Services are now tracked per-addon and dropped in `cleanup()`.
+
+## Build
+
+```bash
+./gradlew build              # → plugin/build/libs/Mythos-0.1.0.jar
+./gradlew publishApiLocally  # → ~/.m2, so addons can build with no GitHub token
+./gradlew :plugin:runFolia   # a test server
 ```
 
-**[Writing an Addon →](https://github.com/Crew-co/Mythos/wiki/Writing-an-Addon)**
+Install: `Mythos-0.1.0.jar` in `plugins/`, addon jars in `plugins/Mythos/addons/`.
+`/addons` lists them, `/addons reload` re-reads them.
 
-## Built on
+## Folia rules (the ones that actually bit)
 
-- [FoliaPluginTemplate-Addon-Based-Version](https://github.com/Crew-co/FoliaPluginTemplate-Addon-Based-Version) — the host
-- [FoliaAddonTemplate](https://github.com/Crew-co/FoliaAddonTemplate) — every story
+- **Shared state** (era, role holders) → `schedulers.global`. The one true race — two
+  players claiming the last seat of a role on two region threads in the same tick — is
+  closed with a `synchronized` check-and-take inside `RoleServiceImpl.claim`.
+- **Another player** → `schedulers.entity(target)`. Reading a foreign player's
+  `Location` across regions throws; use `getNearbyEntities`, which only ever returns
+  entities your region owns.
+- Teleports: `teleportAsync`, always. Disk: `schedulers.async`, always.
 
-Two changes to the host worth knowing: **addon classloaders now delegate to their `depends:`** (so one
-addon can publish an API another builds on), and a **service-registry leak** on unload is fixed. See
-[Architecture](https://github.com/Crew-co/Mythos/wiki/Architecture).
+## Known caveat (inherited)
+
+Addon commands go into Bukkit's command map and are **not** removed on `/addons reload`,
+so a reloaded addon re-registers them (newest wins). Fine for dev; restart for production.
