@@ -20,8 +20,8 @@ paper {
     main = "net.crewco.mythos.MythosPlugin"
     apiVersion = "1.21"
     foliaSupported = true // REQUIRED — Folia won't load the plugin without it
-    authors = listOf("YourName")
-    description = "A Folia plugin template with a dynamic addon system."
+    authors = listOf("Crew-co")
+    description = "A Greek mythology engine: roles, spirits, eras and powers. The myths are addons."
 }
 
 tasks {

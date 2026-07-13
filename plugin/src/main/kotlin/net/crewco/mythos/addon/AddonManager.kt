@@ -85,8 +85,15 @@ class AddonManager(private val plugin: MythosPlugin) {
             } catch (e: Throwable) {
                 plugin.logger.log(Level.SEVERE, "Error disabling ${entry.description.name}", e)
             }
-            // Undo anything the addon registered (listeners, commands, tasks).
+            // Undo anything the addon registered (listeners, commands, tasks, services).
             entry.context.cleanup()
+
+            // And anything it put somewhere the host owns: contributions posted to
+            // extension points, and any menu it defined that someone is still looking at.
+            // Both are objects whose class is about to have no classloader behind it.
+            runCatching { plugin.engine.extensions.dropFrom(entry.classLoader) }
+            runCatching { plugin.menus.closeAllFrom(entry.classLoader) }
+
             runCatching { entry.classLoader.close() }
         }
         loaded.clear()

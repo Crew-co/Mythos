@@ -1,0 +1,87 @@
+# ---------------------------------------------------------------------------
+# MythosCore
+# ---------------------------------------------------------------------------
+
+claiming:
+  # If true, every role additionally needs mythos.claim.<roleid>. Turn this on for
+  # a curated cast; leave it off for a free-for-all scramble at world start.
+  require-permission: false
+
+  # When a mantle falls vacant, offer it to the front of the spirit queue first,
+  # rather than letting whoever types fastest take it.
+  queue-priority: true
+
+  # How long a spirit has to accept an offer before it rolls to the next in line.
+  offer-seconds: 60
+
+  # A god who abdicates or is deposed can't immediately grab another role.
+  # On a 100+ server where the rank and file die constantly, drop this to ~30 —
+  # it's there to stop role-hopping, not to bench half your playerbase.
+  cooldown-seconds: 300
+
+  # Where roleless players land instead of the spirit world. Leave empty during the
+  # Age of Chaos (there is nothing to be yet); set it to a many-seated role like
+  # "olympian-sworn" or, later, "mortal", and the queue becomes what it should be:
+  # a line for the NAMED roles, not a waiting room for the whole server.
+  default-role: ""
+
+  # Essence a spirit must burn to take a role of each tier. 0 = free.
+  essence-cost:
+    PRIMORDIAL: 0     # the first age is free — there's nobody around to have earned anything
+    TITAN: 20
+    OLYMPIAN: 40
+    CHTHONIC: 30
+    MONSTER: 10
+    DEMIGOD: 10
+    HERO: 5
+    MORTAL: 0
+
+spirit:
+  # ADVENTURE = a visible ghost that can be seen and roleplayed around (recommended).
+  # SPECTATOR = a true fly-through camera; more freedom, less presence.
+  mode: ADVENTURE
+  invisible: true
+  can-fly: true
+
+  # Essence for simply haunting the world.
+  essence-per-interval: 1
+  interval-minutes: 5
+
+  # Essence for being present when history happens.
+  essence-on-era-advance: 10
+  essence-on-divine-death: 5
+
+death:
+  # What happens when a god is killed by something that CAN kill it:
+  #   RELEASE = the mantle is torn away and returns to the pool (recommended)
+  #   KEEP    = they respawn and keep it; death is only a setback
+  on-divine-death: RELEASE
+
+  # A holder who never comes back eventually loses the mantle. 0 disables.
+  release-after-offline-hours: 72
+
+eras:
+  # When the story moves on, does the cast of the finished story go back to the spirit
+  # world? Roles marked Endurance.ERA (the sworn armies, the one-scene cast) are
+  # dissolved and sealed; Endurance.ETERNAL roles (Gaia, Zeus, the Cyclopes) are not.
+  #
+  # A story addon can keep a specific character on stage by cancelling RoleRetiringEvent
+  # — that's how the Odyssey inherits Odysseus from the Iliad.
+  retire-cast-on-advance: true
+
+  # The pause between one age's epilogue and the next age's prologue: dark, silent, and
+  # unclaimable. This is what makes a story LAND instead of being trampled by the next.
+  interlude-ticks: 60
+
+  # Essence granted for having played a part. Veterans of a finished age get a head
+  # start in the queue for the next one, which is exactly the incentive you want.
+  retirement-essence: 25
+
+display:
+  # Boss bar (the age + its progress) and sidebar (your role, essence, queue position).
+  hud: true
+
+  # Nametags/chat get "<color>Name of Gaia" etc.
+  prefix-names: true
+  broadcast-claims: true
+  broadcast-eras: true
