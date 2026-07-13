@@ -1,7 +1,13 @@
 package net.crewco.mythos.addon
 
 import net.crewco.mythos.MythosPlugin
+import net.crewco.mythos.hud.HudService
+import net.crewco.mythos.menu.Menu
+import net.crewco.mythos.menu.MenuService
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
+import net.kyori.adventure.bossbar.BossBar
+import net.kyori.adventure.text.Component
+import org.bukkit.entity.Player
 import org.bukkit.Location
 import org.bukkit.entity.Entity
 import org.bukkit.event.HandlerList
@@ -9,7 +15,6 @@ import org.bukkit.event.Listener
 import org.bukkit.plugin.Plugin
 import java.io.File
 import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 
@@ -43,6 +48,16 @@ class HostAddonContext(
 
     override val schedulers: AddonSchedulers = TrackedSchedulers()
 
+    override val menus: MenuService = TrackedMenus()
+
+    override val hud: HudService = TrackedHud()
+
+    /** Who this addon opened menus for / put things on the screen of. */
+    private val menuViewers = Collections.synchronizedSet(HashSet<java.util.UUID>())
+    private val barKeys = Collections.synchronizedSet(HashSet<String>())
+    private val barViewers = Collections.synchronizedSet(HashSet<java.util.UUID>())
+    private val sidebarViewers = Collections.synchronizedSet(HashSet<java.util.UUID>())
+
     override fun registerCommand(handler: Any) {
         // Commands go through the host's CommandManager (same @Command annotations).
         host.commands.register(handler)
@@ -54,12 +69,12 @@ class HostAddonContext(
     }
 
     override fun <T : Any> registerService(type: Class<T>, service: T) {
-        services[type] = service
+        AddonServices.register(type, service)
         ownServices += type
     }
 
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> service(type: Class<T>): T? = services[type] as? T
+    /** Finds the HOST's engine services (roles, spirits, eras...) and other addons' alike. */
+    override fun <T : Any> service(type: Class<T>): T? = AddonServices.get(type)
 
     override fun addon(name: String): Addon? = manager.addon(name)
 
@@ -74,11 +89,61 @@ class HostAddonContext(
             tasks.clear()
         }
         synchronized(ownServices) {
-            ownServices.forEach { services.remove(it) }
+            ownServices.forEach { AddonServices.remove(it) }
             ownServices.clear()
+        }
+        // A menu whose click handler was defined by this addon is, one unload from now,
+        // a lambda with a dead classloader behind it. Shut them before anyone clicks.
+        synchronized(menuViewers) {
+            host.menus.closeFor(menuViewers)
+            menuViewers.clear()
+        }
+        synchronized(barViewers) {
+            host.hud.clearAll(barViewers, barKeys.toList(), sidebarViewers)
+            barViewers.clear()
+            barKeys.clear()
+            sidebarViewers.clear()
         }
         // Note: commands registered into Bukkit's command map are not removed
         // here — see the README's addon reload caveat.
+    }
+
+    /** Delegates to the host's menu service, remembering who to close on unload. */
+    private inner class TrackedMenus : MenuService {
+        override fun open(player: Player, menu: Menu) {
+            menuViewers += player.uniqueId
+            host.menus.open(player, menu)
+        }
+
+        override fun refresh(player: Player) = host.menus.refresh(player)
+        override fun close(player: Player) = host.menus.close(player)
+        override fun openMenu(player: Player): Menu? = host.menus.openMenu(player)
+    }
+
+    /** Delegates to the host's HUD, remembering what to tear down on unload. */
+    private inner class TrackedHud : HudService {
+        override fun bossBar(
+            player: Player,
+            key: String,
+            text: Component,
+            progress: Float,
+            color: BossBar.Color,
+            overlay: BossBar.Overlay,
+        ) {
+            barViewers += player.uniqueId
+            barKeys += key
+            host.hud.bossBar(player, key, text, progress, color, overlay)
+        }
+
+        override fun removeBossBar(player: Player, key: String) = host.hud.removeBossBar(player, key)
+
+        override fun sidebar(player: Player, title: Component, lines: List<Component>) {
+            sidebarViewers += player.uniqueId
+            host.hud.sidebar(player, title, lines)
+        }
+
+        override fun clearSidebar(player: Player) = host.hud.clearSidebar(player)
+        override fun actionBar(player: Player, text: Component) = host.hud.actionBar(player, text)
     }
 
     private fun track(task: ScheduledTask): ScheduledTask {
@@ -133,8 +198,4 @@ class HostAddonContext(
             track(s.asyncRepeating(initialDelay, period, unit, task))
     }
 
-    private companion object {
-        /** Shared across all addons: the host's service registry. */
-        val services = ConcurrentHashMap<Class<*>, Any>()
-    }
 }

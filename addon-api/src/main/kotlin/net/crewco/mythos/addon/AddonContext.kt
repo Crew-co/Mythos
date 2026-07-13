@@ -1,5 +1,7 @@
 package net.crewco.mythos.addon
 
+import net.crewco.mythos.hud.HudService
+import net.crewco.mythos.menu.MenuService
 import org.bukkit.event.Listener
 import org.bukkit.plugin.Plugin
 import java.io.File
@@ -28,6 +30,12 @@ interface AddonContext {
 
     /** Folia-safe schedulers (global / region / entity / async). */
     val schedulers: AddonSchedulers
+
+    /** Chest-GUI framework. Menus you open are closed for you when this addon unloads. */
+    val menus: MenuService
+
+    /** Boss bars, sidebar, action bar. Torn down for you when this addon unloads. */
+    val hud: HudService
 
     /** Register a command handler (same @Command annotations as the host). */
     fun registerCommand(handler: Any)
@@ -58,5 +66,5 @@ object HostApi {
      * `api-version` in addon.yml; the loader refuses to load mismatches rather
      * than letting them fail later with a confusing NoSuchMethodError.
      */
-    const val ADDON_API_VERSION: Int = 1
+    const val ADDON_API_VERSION: Int = 2
 }

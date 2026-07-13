@@ -42,15 +42,12 @@ project(":addon-api") {
             }
         }
         repositories {
-            if (System.getenv("GITHUB_TOKEN") != null) {
-                maven {
-                    name = "GitHubPackages"
-                    url = uri("https://maven.pkg.github.com/${rootProject.property("githubRepo")}")
-
-                    credentials {
-                        username = System.getenv("GITHUB_ACTOR")
-                        password = System.getenv("GITHUB_TOKEN")
-                    }
+            maven {
+                name = "GitHubPackages"
+                url = uri("https://maven.pkg.github.com/${rootProject.property("githubRepo")}")
+                credentials {
+                    username = System.getenv("GITHUB_ACTOR")
+                    password = System.getenv("GITHUB_TOKEN")
                 }
             }
         }
