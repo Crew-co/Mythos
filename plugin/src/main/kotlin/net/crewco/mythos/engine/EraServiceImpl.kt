@@ -282,19 +282,25 @@ class EraServiceImpl(private val core: MythosEngine) : EraService {
         transitioning = false
     }
 
-    /** One tick after startup, when every addon has registered its chapter. */
-    internal fun bootstrap() {
+    /**
+     * One tick after startup, when every addon has registered its chapter.
+     *
+     * @return true if it started a TRANSITION — meaning `current` is not set yet and will not be
+     *         for `interlude-ticks`. The caller must not touch players until it lands, or they will
+     *         be placed in a world that has not decided what age it is.
+     */
+    internal fun bootstrap(): Boolean {
         // Wire the chain FIRST. Until now the shape of the story depended on jar load order.
         applyLinks()
 
         if (current.isNotEmpty() && eras.contains(current)) {
             core.logger.info("Resuming the age of '$current'.")
-            return
+            return false
         }
         val first = chain().firstOrNull() ?: run {
             core.logger.warning("No eras registered — install a story addon (e.g. EraOfCreation).")
-            return
+            return false
         }
-        advance(first.id, "the world begins")
+        return advance(first.id, "the world begins")
     }
 }

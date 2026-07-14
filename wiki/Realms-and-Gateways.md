@@ -19,12 +19,34 @@ RealmDefinition(
 | `PRIMARY` | the server's existing overworld. Nobody generates the ground; it was here first. |
 | `VOID` | nothing. An empty world with a small platform, for things that aren't yet. |
 | `SKY` | void, with a generated island. Olympus. |
-| `OVERWORLD` / `NETHER` / `END` | normal generation |
+| `CAVERN` | solid rock with a hollow band carved out of it, a floor, and **no sky, ever**. Tartarus. The House of Hades. |
+| `OVERWORLD` | normal generation |
+| `NETHER` / `END` | **require runtime world creation — these do not work on Folia.** Use `CAVERN`. |
 
 `still = true` → no time, no weather, no mobs. **The Void does not have a Tuesday.**
 
-Register realms in `onEnable`. **The engine builds them at the tail of startup** — worlds cannot be
-created while a server is running.
+## How worlds actually get made
+
+**Folia will not create a world while the server is running.** `WorldCreator.createWorld()` throws.
+
+So the engine uses the one path Bukkit has always supported: it writes each realm into `bukkit.yml`
+and answers `getDefaultWorldGenerator` at world-load — which happens *before* plugins enable, and
+therefore before a single addon has declared anything. (The generator settings are cached to
+`realms.yml` on each boot for exactly that reason.)
+
+**Practical consequence: the first boot after installing a realm needs a restart.** The engine says
+so, loudly, in a box. After that they are ordinary worlds that load with the server.
+
+```yaml
+# bukkit.yml — written for you
+worlds:
+  mythos_void:
+    generator: Mythos:void
+```
+
+And a design consequence worth having: `bukkit.yml` cannot set a world's *environment*, which is why
+Tartarus and the Underworld are `CAVERN`s rather than Nether worlds. Which is better. *It is not fire.
+It is a great grey plain, and it goes on.*
 
 ## Access is enforced by the world
 

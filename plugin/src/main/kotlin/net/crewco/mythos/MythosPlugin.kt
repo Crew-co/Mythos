@@ -4,6 +4,9 @@ import net.crewco.mythos.addon.AddonManager
 import net.crewco.mythos.command.CommandManager
 import net.crewco.mythos.commands.AddonsCommand
 import net.crewco.mythos.engine.MythosEngine
+import net.crewco.mythos.engine.RealmServiceImpl
+import org.bukkit.generator.ChunkGenerator
+import java.io.File
 import net.crewco.mythos.hud.HostHudService
 import net.crewco.mythos.menu.HostMenuService
 import net.crewco.mythos.scheduler.Schedulers
@@ -76,6 +79,36 @@ class MythosPlugin : JavaPlugin() {
         engine.createRealms()
 
         logger.info("Enabled ${pluginMeta.name} v${pluginMeta.version} (Folia: ${Schedulers.isFolia})")
+    }
+
+    /**
+     * **Bukkit asks this while it is loading worlds — which happens BEFORE any plugin's onEnable, and
+     * therefore long before a single addon has declared a single realm.**
+     *
+     * So we cannot ask the engine what a "void" is. We read `realms.yml`, which the engine wrote on the
+     * previous boot for exactly this moment. First install: the realms are registered in bukkit.yml and
+     * the server is told to restart. Every boot after that, this method is how they come back.
+     *
+     * `bukkit.yml`:
+     * ```yaml
+     * worlds:
+     *   mythos_void:
+     *     generator: Mythos:void
+     * ```
+     */
+    override fun getDefaultWorldGenerator(worldName: String, id: String?): ChunkGenerator? {
+        val realmId = id?.takeIf { it.isNotBlank() } ?: return null
+
+        // The engine may not exist yet — this runs before onEnable. Read the cache directly.
+        val cache = File(dataFolder, "realms.yml")
+        if (!cache.exists()) {
+            logger.warning("Bukkit wants a generator for '$worldName' (realm '$realmId') but realms.yml is missing.")
+            return null
+        }
+        val generator = RealmServiceImpl.generatorFromCache(cache, realmId)
+        if (generator == null) logger.warning("No cached generator for realm '$realmId' — is the addon that declared it still installed?")
+        else logger.info("Generating world '$worldName' as realm '$realmId'.")
+        return generator
     }
 
     override fun onDisable() {
