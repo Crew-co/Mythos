@@ -471,6 +471,40 @@ class MythosAdminCommand(private val core: MythosEngine) {
     @TabComplete(subcommand = "realm")
     fun completeRealm(ctx: CommandContext) = core.realms.realms().map { it.id }
 
+    @Subcommand("scars", description = "Temporary damage to the world, and how to undo it.")
+    fun scars(ctx: CommandContext) {
+        val scars = core.terraform.scars()
+        if (scars.isEmpty()) return ctx.info("The world is as it was. Nothing is pending.")
+        ctx.info("Open wounds:")
+        scars.forEach { ctx.reply("<dark_gray>  · <white>$it <dark_gray>— ${core.terraform.size(it)} blocks <dark_gray>(/mythos heal $it)") }
+    }
+
+    @Subcommand("heal", minArgs = 1, usage = "/mythos heal <scar|all>", description = "Put the world back.")
+    fun heal(ctx: CommandContext) {
+        val id = ctx.args[0]
+        if (id.equals("all", true)) {
+            val all = core.terraform.scars()
+            all.forEach { core.terraform.heal(it) }
+            return ctx.success("Healing ${all.size} scar(s). The world will settle over the next few seconds.")
+        }
+        if (id !in core.terraform.scars()) return ctx.error("No such scar. /mythos scars")
+        core.terraform.heal(id)
+        ctx.success("Healing '$id'.")
+    }
+
+    @Subcommand("gateways", description = "Every door in the world, and where it goes.")
+    fun gateways(ctx: CommandContext) {
+        val gateways = core.realms.gateways()
+        if (gateways.isEmpty()) return ctx.info("There are no doors. Everything is a command, which is a shame.")
+        ctx.info("Doors:")
+        gateways.forEach { gate ->
+            ctx.reply("<dark_gray>  · <white>${gate.id} <dark_gray>→ ${gate.toRealm} <dark_gray>at ${gate.at.blockX}, ${gate.at.blockY}, ${gate.at.blockZ}")
+        }
+    }
+
+    @TabComplete(subcommand = "heal")
+    fun completeHeal(ctx: CommandContext) = core.terraform.scars() + "all"
+
     @Subcommand("points", description = "Every extension point anyone has opened or posted to.")
     fun points(ctx: CommandContext) {
         val points = core.extensions.points()

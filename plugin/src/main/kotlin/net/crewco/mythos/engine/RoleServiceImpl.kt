@@ -6,6 +6,7 @@ import net.crewco.mythos.api.event.RoleReleasedEvent
 import net.crewco.mythos.api.role.ClaimContext
 import net.crewco.mythos.api.role.ClaimResult
 import net.crewco.mythos.api.era.EraDefinition
+import net.crewco.mythos.api.event.PlayerReincarnatingEvent
 import net.crewco.mythos.api.event.RoleRetiringEvent
 import net.crewco.mythos.api.role.ClaimRules
 import net.crewco.mythos.api.role.Endurance
@@ -88,6 +89,8 @@ class RoleServiceImpl(private val core: MythosEngine) : RoleService {
     }
 
     override fun openRoles(): List<RoleDefinition> = definitions().filter { isOpen(it.id) }
+
+    override fun defaultRole(): String? = core.config.defaultRole.takeIf { it.isNotEmpty() }
 
     /** The context every gate is judged against. One place, so claim/evaluate/offer agree. */
     private fun context(player: Player, roleId: String) = ClaimContext(
@@ -335,13 +338,18 @@ class RoleServiceImpl(private val core: MythosEngine) : RoleService {
         val fallback = core.config.defaultRole
         if (!quiet && fallback.isNotEmpty() && fallback == id) {
             core.schedulers.globalDelayed(100) {
-                if (isOpen(fallback) && core.profiles.profile(uuid).roleId == null) {
-                    claimCooldowns.remove(uuid) // dying is not a cooldown offence
-                    assign(uuid, fallback, "born again")
-                    Bukkit.getPlayer(uuid)?.sendMessage(
-                        mm("<gray>You wake up somewhere else, as someone else. <dark_gray><i>The world does not comment."),
-                    )
-                }
+                if (!isOpen(fallback) || core.profiles.profile(uuid).roleId != null) return@globalDelayed
+
+                // An addon may have opinions about death — ChthonicRealm certainly does. Ask first.
+                val event = PlayerReincarnatingEvent(uuid, fallback, Bukkit.getPlayer(uuid))
+                Bukkit.getPluginManager().callEvent(event)
+                if (event.isCancelled) return@globalDelayed
+
+                claimCooldowns.remove(uuid) // dying is not a cooldown offence
+                assign(uuid, fallback, "born again")
+                Bukkit.getPlayer(uuid)?.sendMessage(
+                    mm("<gray>You wake up somewhere else, as someone else. <dark_gray><i>The world does not comment."),
+                )
             }
         }
 

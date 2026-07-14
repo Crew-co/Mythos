@@ -8,6 +8,7 @@ import net.crewco.mythos.api.ext.ExtensionService
 import net.crewco.mythos.api.power.PowerService
 import net.crewco.mythos.api.profile.ProfileService
 import net.crewco.mythos.api.realm.RealmService
+import net.crewco.mythos.api.world.TerraformService
 import net.crewco.mythos.api.role.RoleService
 import net.crewco.mythos.api.spirit.SpiritService
 import net.crewco.mythos.api.story.ChronicleService
@@ -64,6 +65,9 @@ class Mythos(
 
     /** The Void, Gaia, Tartarus, Olympus. Real worlds, with rules about who may stand in them. */
     val realms: RealmService,
+
+    /** Undo, for the world. If your story floods it, your story can put it back. */
+    val terraform: TerraformService,
 ) {
     companion object {
         fun from(context: AddonContext): Mythos = Mythos(
@@ -77,6 +81,7 @@ class Mythos(
             extensions = context.service<ExtensionService>() ?: missing("ExtensionService"),
             dev = context.service<DevService>() ?: missing("DevService"),
             realms = context.service<RealmService>() ?: missing("RealmService"),
+            terraform = context.service<TerraformService>() ?: missing("TerraformService"),
         )
 
         private fun missing(what: String): Nothing = error(
