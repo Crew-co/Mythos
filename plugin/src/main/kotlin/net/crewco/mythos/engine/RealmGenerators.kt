@@ -113,6 +113,12 @@ class CavernGenerator(
 
     override fun generateSurface(world: WorldInfo, random: Random, chunkX: Int, chunkZ: Int, chunk: ChunkData) {
         val bottom = world.minHeight
+
+        // The roof must sit above the floor or there is no hollow at all — and if roofY <= floorY
+        // (e.g. a CAVERN left on the SKY-tuned defaults) the ceiling loop would overwrite the floor
+        // and fill the world solid. Clamp so there is always at least a little headroom to stand in.
+        val ceiling = maxOf(roofY, floorY + 3)
+
         for (x in 0 until 16) {
             for (z in 0 until 16) {
                 // Bedrock floor, a few metres of rock, then the floor you walk on.
@@ -122,7 +128,7 @@ class CavernGenerator(
 
                 // ...the hollow...
                 // ...and everything above the roof is solid, so there is no sky. There is never a sky.
-                for (y in roofY..world.maxHeight - 1) chunk.setBlock(x, y, z, stone)
+                for (y in ceiling..world.maxHeight - 1) chunk.setBlock(x, y, z, stone)
             }
         }
     }

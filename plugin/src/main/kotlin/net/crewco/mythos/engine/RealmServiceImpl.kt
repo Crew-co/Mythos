@@ -2,6 +2,7 @@ package net.crewco.mythos.engine
 
 import net.crewco.mythos.api.realm.*
 import net.crewco.mythos.command.CommandContext.Companion.mm
+import net.crewco.mythos.scheduler.Schedulers
 import org.bukkit.Bukkit
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.generator.ChunkGenerator
@@ -36,7 +37,21 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
     private val granted = ConcurrentHashMap<String, CopyOnWriteArrayList<net.crewco.mythos.api.realm.RealmAccess>>()
 
     override fun register(realm: RealmDefinition) {
-        realms[realm.id] = realm
+        // Every lookup (realm(), world(), spawnOf(), send()) keys on id.lowercase(), and the
+        // generator round-trip through bukkit.yml/realms.yml does too. Normalise once, here, so a
+        // realm declared as "Tartarus" isn't silently unreachable by realm("tartarus").
+        realms[realm.id.lowercase()] = realm
+
+        // A CAVERN's roof must be ABOVE its floor, or there is no hollow and the generator fills
+        // the world solid. The defaults (platformY 200, roofY 120) are tuned for SKY, so a CAVERN
+        // that leans on them is inverted. Warn loudly; the generator also clamps as a safety net.
+        if (realm.kind == RealmKind.CAVERN && realm.roofY <= realm.platformY) {
+            core.logger.warning(
+                "Realm '${realm.id}' is a CAVERN whose roofY (${realm.roofY}) is not above its floor " +
+                    "(platformY ${realm.platformY}). Set roofY well above platformY, or it will be a very " +
+                    "thin cave. Example: platformY = 40, roofY = 100.",
+            )
+        }
         core.logger.info("Realm '${realm.id}' declared (${realm.kind})")
     }
 
@@ -62,7 +77,8 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
         if (realm.access.mayEnter(player, context)) return true
 
         // ...or anything a later addon decided was also a way in. A bough. A helm. A coin.
-        return granted[realm.id]?.any { it.mayEnter(player, context) } == true
+        // grant() keys on id.lowercase(); match it, or an extra way in silently never fires.
+        return granted[realm.id.lowercase()]?.any { it.mayEnter(player, context) } == true
     }
 
     override fun openGateway(gateway: Gateway) = gateways.open(gateway)
@@ -102,74 +118,101 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
     /**
      * **Build the cosmos.**
      *
-     * And here is the constraint that shapes this entire file: **Folia does not permit creating a
-     * world at runtime.** `WorldCreator.createWorld()` throws, and every realm silently failed to
-     * generate — which is why, on a fresh server, the spirits of the Age of Chaos were left standing
-     * in the overworld instead of the Void, with a warning buried three hundred lines up the log.
+     * Called once, at the tail of `onEnable`, after every addon has declared its realms.
      *
-     * The only supported path is the one Bukkit has always had: **`bukkit.yml` + a plugin generator**,
-     * resolved at world-load, which happens *before* plugins enable. So:
+     * **On Paper**, `WorldCreator.createWorld()` works here and creates (or, on later boots, loads)
+     * each realm's world — no restart, no external tooling. This is the normal path.
      *
-     *  1. we cache each realm's generator settings to `realms.yml` (addons haven't loaded yet next
-     *     boot, so the generator has to read them from disk);
-     *  2. we write `worlds.<name>.generator: Mythos:<realmId>` into `bukkit.yml`;
-     *  3. we *try* runtime creation anyway, because on plain Paper it works and saves a restart;
-     *  4. and if anything is still missing, we say so **loudly**, at the top of the log, in a box.
+     * **On Folia**, there is no Bukkit path to a custom world at all: `createWorld()` throws
+     * (PaperMC/Folia#134) and a world merely listed in `bukkit.yml` is *not* loaded at boot — so a
+     * restart never helps. The only way a custom realm exists on Folia is for a Folia-capable world
+     * manager to load it (via NMS); Mythos then **adopts** any world it finds already loaded under
+     * the realm's [RealmDefinition.worldName]. To make that adoption reproduce the right terrain we:
      *
-     * One restart on first install. After that they are ordinary worlds that load with the server.
+     *  1. cache each realm's generator settings to `realms.yml` (read back with no engine present);
+     *  2. write `worlds.<name>.generator: Mythos:<realmId>` into `bukkit.yml`, so a manager or a
+     *     manual load resolves the generator through [generatorFromCache];
+     *  3. try `createWorld()` regardless — it succeeds on Paper and is a harmless no-op-with-warning
+     *     on Folia;
+     *  4. and for anything that still doesn't exist, say *accurately* what to do — see [reportPending].
      */
     fun createAll() {
         cacheGenerators()
         val pending = ArrayList<RealmDefinition>()
 
         realms.values.forEach { realm ->
+            val key = realm.id.lowercase()
+
             if (realm.kind == RealmKind.PRIMARY) {
-                Bukkit.getWorlds().firstOrNull()?.let { worlds[realm.id] = it }
+                Bukkit.getWorlds().firstOrNull()?.let { worlds[key] = it }
                 return@forEach
             }
 
-            // Already on disk — loaded at startup from bukkit.yml, or created on a previous Paper run.
+            // Already loaded — created earlier in this same startup, or brought online by a world
+            // manager. On Folia that manager is the ONLY way a custom world gets loaded, so adopting
+            // an already-present world is a first-class path, not just a fast exit.
             Bukkit.getWorld(realm.worldName)?.let {
-                worlds[realm.id] = it
+                worlds[key] = it
                 configure(realm, it)
                 core.logger.info("Realm '${realm.id}' → world '${it.name}'")
                 return@forEach
             }
 
+            // Persist the generator so anything that DOES load this world — a manager, or a manual
+            // bukkit.yml load — reproduces it. Note: this does not, on its own, load the world.
             registerInBukkitYml(realm)
 
-            // Paper: this works and we're done. Folia: this throws, and we need a restart.
+            // Paper: creates (or loads) the world here during startup — no restart, no manager.
+            // Folia: Bukkit.createWorld() is unsupported and throws (PaperMC/Folia#134), so this
+            // returns null and the world must come from a Folia-capable world manager instead.
             val world = runCatching { creator(realm).createWorld() }
-                .onFailure { core.logger.info("Realm '${realm.id}' cannot be created at runtime (${it.javaClass.simpleName}) — it will generate on restart.") }
+                .onFailure { core.logger.info("Realm '${realm.id}' could not be created at runtime (${it.javaClass.simpleName}).") }
                 .getOrNull()
 
             if (world == null) {
                 pending += realm
                 return@forEach
             }
-            worlds[realm.id] = world
+            worlds[key] = world
             configure(realm, world)
             core.logger.info("Realm '${realm.id}' → world '${world.name}'")
         }
 
-        if (pending.isEmpty()) return
+        if (pending.isNotEmpty()) reportPending(pending)
+    }
 
-        // A warning in a log nobody reads is a bug that ships. Say it properly.
+    /**
+     * Tell the admin the truth about what happened — the previous version promised that a restart
+     * would fix Folia, which it never does (a world in bukkit.yml is not loaded at boot, and
+     * createWorld throws again), so the box printed forever and the realms never appeared.
+     */
+    private fun reportPending(pending: List<RealmDefinition>) {
+        val bar = "+------------------------------------------------------------------+"
         core.logger.warning("")
-        core.logger.warning("+------------------------------------------------------------------+")
-        core.logger.warning("|  ${pending.size} REALM(S) HAVE NOT GENERATED YET.                            ")
-        core.logger.warning("|                                                                  |")
+        core.logger.warning(bar)
+        core.logger.warning("|  ${pending.size} REALM(S) COULD NOT BE CREATED:")
         pending.forEach { core.logger.warning("|    ${it.id} -> ${it.worldName}") }
-        core.logger.warning("|                                                                  |")
-        core.logger.warning("|  Folia will not create a world while the server is running, so    |")
-        core.logger.warning("|  they have been written into bukkit.yml instead.                  |")
-        core.logger.warning("|                                                                  |")
-        core.logger.warning("|  >>> RESTART THE SERVER. <<<  They will generate on boot, and     |")
-        core.logger.warning("|  you will never see this message again.                           |")
-        core.logger.warning("|                                                                  |")
-        core.logger.warning("|  Until then, anything that sends a player to one of these will    |")
-        core.logger.warning("|  do nothing, and the story will look broken. Because it is.       |")
-        core.logger.warning("+------------------------------------------------------------------+")
+        core.logger.warning("|")
+        if (Schedulers.isFolia) {
+            core.logger.warning("|  This server is Folia, which does not implement world creation through")
+            core.logger.warning("|  the Bukkit API (PaperMC/Folia#134): Bukkit.createWorld() throws, and a")
+            core.logger.warning("|  world merely listed in bukkit.yml is NOT loaded at boot. A restart will")
+            core.logger.warning("|  NOT create these on its own.")
+            core.logger.warning("|")
+            core.logger.warning("|  Load their worlds with a Folia-capable world manager (one that loads")
+            core.logger.warning("|  worlds via NMS), giving each the generator 'Mythos:<id>' — Mythos will")
+            core.logger.warning("|  adopt any world already loaded under the name above. Or run on Paper,")
+            core.logger.warning("|  where no manager is needed and realms generate on first boot.")
+        } else {
+            core.logger.warning("|  Their worlds were registered in bukkit.yml with a 'Mythos:<id>'")
+            core.logger.warning("|  generator, but createWorld() failed. Check the log above for the real")
+            core.logger.warning("|  cause (a bad material name, a generator error) — that is what stopped")
+            core.logger.warning("|  them, and it will recur until it is fixed.")
+        }
+        core.logger.warning("|")
+        core.logger.warning("|  Until a realm exists, anything that sends a player there refuses and")
+        core.logger.warning("|  says so, instead of failing silently.")
+        core.logger.warning(bar)
         core.logger.warning("")
     }
 
@@ -210,13 +253,14 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
     private fun cacheGenerators() {
         val yaml = YamlConfiguration()
         realms.values.filter { it.kind != RealmKind.PRIMARY }.forEach { realm ->
-            yaml.set("${realm.id}.kind", realm.kind.name)
-            yaml.set("${realm.id}.world", realm.worldName)
-            yaml.set("${realm.id}.platform-y", realm.platformY)
-            yaml.set("${realm.id}.roof-y", realm.roofY)
-            yaml.set("${realm.id}.radius", realm.platformRadius)
-            yaml.set("${realm.id}.material", realm.platformMaterial)
-            yaml.set("${realm.id}.stone", realm.stone)
+            val key = realm.id.lowercase()
+            yaml.set("$key.kind", realm.kind.name)
+            yaml.set("$key.world", realm.worldName)
+            yaml.set("$key.platform-y", realm.platformY)
+            yaml.set("$key.roof-y", realm.roofY)
+            yaml.set("$key.radius", realm.platformRadius)
+            yaml.set("$key.material", realm.platformMaterial)
+            yaml.set("$key.stone", realm.stone)
         }
         runCatching { yaml.save(File(core.dataFolder, "realms.yml")) }
             .onFailure { core.logger.warning("Could not cache realm generators: ${it.message}") }
@@ -229,12 +273,13 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
             return
         }
         val yaml = YamlConfiguration.loadConfiguration(file)
+        val id = realm.id.lowercase()
         val path = "worlds.${realm.worldName}.generator"
-        if (yaml.getString(path) == "Mythos:${realm.id}") return // already there
+        if (yaml.getString(path) == "Mythos:$id") return // already there
 
-        yaml.set(path, "Mythos:${realm.id}")
+        yaml.set(path, "Mythos:$id")
         runCatching { yaml.save(file) }
-            .onSuccess { core.logger.info("Registered '${realm.worldName}' in bukkit.yml (generator: Mythos:${realm.id})") }
+            .onSuccess { core.logger.info("Registered '${realm.worldName}' in bukkit.yml (generator: Mythos:$id)") }
             .onFailure { core.logger.warning("Could not write bukkit.yml: ${it.message}") }
     }
 
@@ -250,17 +295,18 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
         fun generatorFromCache(file: File, realmId: String): ChunkGenerator? {
             if (!file.exists()) return null
             val yaml = YamlConfiguration.loadConfiguration(file)
-            if (!yaml.contains(realmId)) return null
+            val key = realmId.lowercase()
+            if (!yaml.contains(key)) return null
 
-            val kind = runCatching { RealmKind.valueOf(yaml.getString("$realmId.kind", "VOID")!!) }.getOrNull()
+            val kind = runCatching { RealmKind.valueOf(yaml.getString("$key.kind", "VOID")!!) }.getOrNull()
                 ?: return null
-            val material = runCatching { Material.valueOf(yaml.getString("$realmId.material", "QUARTZ_BLOCK")!!) }
+            val material = runCatching { Material.valueOf(yaml.getString("$key.material", "QUARTZ_BLOCK")!!) }
                 .getOrDefault(Material.QUARTZ_BLOCK)
-            val stone = runCatching { Material.valueOf(yaml.getString("$realmId.stone", "DEEPSLATE")!!) }
+            val stone = runCatching { Material.valueOf(yaml.getString("$key.stone", "DEEPSLATE")!!) }
                 .getOrDefault(Material.DEEPSLATE)
-            val platformY = yaml.getInt("$realmId.platform-y", 200)
-            val roofY = yaml.getInt("$realmId.roof-y", 120)
-            val radius = yaml.getInt("$realmId.radius", 24)
+            val platformY = yaml.getInt("$key.platform-y", 200)
+            val roofY = yaml.getInt("$key.roof-y", 120)
+            val radius = yaml.getInt("$key.radius", 24)
 
             return when (kind) {
                 RealmKind.VOID -> VoidGenerator(material, 64, radius)

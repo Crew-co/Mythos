@@ -117,6 +117,10 @@ class Gateways(private val core: MythosEngine, private val file: File) {
                 radius = yaml.getDouble("$id.radius", 2.0),
                 arrival = yaml.getString("$id.arrival", "")!!,
                 refusal = yaml.getString("$id.refusal", "<dark_gray><i>The way is not open to you.")!!,
+                // These were written by save() but never read back, so a reloaded gateway silently
+                // reverted to the default soul-fire and lost its sound. Restore them.
+                particle = if (yaml.contains("$id.particle")) yaml.getString("$id.particle") else "SOUL_FIRE_FLAME",
+                sound = yaml.getString("$id.sound"),
             )
         }
         core.logger.info("${gateways.size} gateway(s) loaded.")
@@ -131,6 +135,8 @@ class Gateways(private val core: MythosEngine, private val file: File) {
             yaml.set("${gateway.id}.radius", gateway.radius)
             yaml.set("${gateway.id}.arrival", gateway.arrival)
             yaml.set("${gateway.id}.refusal", gateway.refusal)
+            yaml.set("${gateway.id}.particle", gateway.particle)
+            yaml.set("${gateway.id}.sound", gateway.sound)
         }
         runCatching { yaml.save(file) }
     }
