@@ -19,52 +19,12 @@ RealmDefinition(
 | `PRIMARY` | the server's existing overworld. Nobody generates the ground; it was here first. |
 | `VOID` | nothing. An empty world with a small platform, for things that aren't yet. |
 | `SKY` | void, with a generated island. Olympus. |
-| `CAVERN` | solid rock with a hollow band carved out of it, a floor, and **no sky, ever**. Tartarus. The House of Hades. |
-| `OVERWORLD` | normal generation |
-| `NETHER` / `END` | **require runtime world creation — these do not work on Folia.** Use `CAVERN`. |
+| `OVERWORLD` / `NETHER` / `END` | normal generation |
 
 `still = true` → no time, no weather, no mobs. **The Void does not have a Tuesday.**
 
-## How worlds actually get made
-
-**On Paper**, the engine creates each realm's world during `onEnable` with a plugin generator.
-Nothing else is needed: they generate on first boot and load with the server every boot after.
-
-**On Folia**, the Bukkit world API is unimplemented — `WorldCreator.createWorld()` throws
-([PaperMC/Folia#134](https://github.com/PaperMC/Folia/issues/134)) — so Mythos hands the loading off
-to a world manager instead of reaching into server internals itself. The supported one is the
-**[Worlds](https://modrinth.com/project/gBIw3Gvy)** plugin:
-
-- Install Worlds. That's it.
-- On enable, Mythos asks Worlds to create each realm's world through its API
-  (`WorldsAccess.access().create(...)`), passing `Mythos:<id>` as the generator — which Worlds
-  resolves back through Mythos's own `getDefaultWorldGenerator`, so the Void/Olympus/Cavern terrain
-  comes out exactly as the realm declared. Worlds does the Folia-safe NMS; Mythos keeps the rules.
-- Worlds is a **soft dependency** — Mythos loads and runs fine without it. You just won't get the
-  extra realms created for you on Folia.
-
-If you'd rather use a different Folia world manager, load each world yourself with the generator
-`Mythos:<id>` (Mythos writes it into `bukkit.yml` for you) and Mythos adopts whatever it finds loaded
-under the realm's `worldName`:
-
-```yaml
-# bukkit.yml — written for you
-worlds:
-  mythos_void:
-    generator: Mythos:void
-```
-
-**Gaia (the overworld) always works** on both platforms; only the extra realms need a manager on
-Folia. A realm with no world isn't faked — gateways and `/mythos realm` refuse it cleanly and say
-why, and the engine logs exactly what to do.
-
-> The split: Mythos owns the *rules* of a realm (access, ambient, gateways, sending). Actually
-> *loading* a world on Folia needs server internals, which is version-fragile and better left to a
-> dedicated, maintained plugin. So Mythos asks one to do it rather than reimplementing it.
-
-And a design consequence worth having: `bukkit.yml` cannot set a world's *environment*, which is why
-Tartarus and the Underworld are `CAVERN`s rather than Nether worlds. Which is better. *It is not fire.
-It is a great grey plain, and it goes on.*
+Register realms in `onEnable`. **The engine builds them at the tail of startup** — worlds cannot be
+created while a server is running.
 
 ## Access is enforced by the world
 

@@ -45,15 +45,6 @@ The story stops there and says so.
 `/mythos scars` → `/mythos heal all`. A story that breaks the world writes through a **Scar**; if you
 wrote blocks directly, the engine cannot help you.
 
-## The other worlds didn't generate / everyone is stuck in the overworld
-
-**You need to restart once.** Folia will not create a world at runtime; the engine has written the
-realms into `bukkit.yml` and printed a box telling you so. Restart and they generate.
-
-`/mythos realms` shows which exist and which don't. Anything that tries to send a player to a missing
-realm now says so — to the player, and in the log — rather than silently doing nothing, which is what
-made this look like a broken *story* rather than a missing *world*.
-
 ## Something threw on a region thread
 
 You read a foreign player's `Location`. See [Folia Notes](Folia-Notes) — this is the single most common

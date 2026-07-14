@@ -1,5 +1,6 @@
 package net.crewco.mythos.engine
 
+import net.crewco.mythos.api.realm.Gateway
 import net.crewco.mythos.api.realm.RealmContext
 import net.crewco.mythos.api.realm.RealmDefinition
 import net.crewco.mythos.api.realm.RealmKind
@@ -14,6 +15,7 @@ import org.bukkit.World
 import org.bukkit.WorldCreator
 import org.bukkit.entity.Player
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * The cosmos, as actual Bukkit worlds.
@@ -27,6 +29,12 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
 
     private val realms = ConcurrentHashMap<String, RealmDefinition>()
     private val worlds = ConcurrentHashMap<String, World>()
+
+    /** Set by the engine once the data folder exists. */
+    lateinit var gateways: Gateways
+
+    /** Extra ways in, granted by addons that don't own the realm. OR'd with its own rules. */
+    private val granted = ConcurrentHashMap<String, CopyOnWriteArrayList<net.crewco.mythos.api.realm.RealmAccess>>()
 
     override fun register(realm: RealmDefinition) {
         realms[realm.id] = realm
@@ -95,6 +103,11 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
 
     // ---- queries -------------------------------------------------------------
 
+    override fun grant(realmId: String, access: net.crewco.mythos.api.realm.RealmAccess) {
+        granted.getOrPut(realmId.lowercase()) { CopyOnWriteArrayList() } += access
+        core.logger.info("A new way into '$realmId' was granted by an addon.")
+    }
+
     override fun realm(id: String) = realms[id.lowercase()]
     override fun realms(): List<RealmDefinition> = realms.values.toList()
     override fun world(realmId: String): World? = worlds[realmId.lowercase()]
@@ -106,17 +119,31 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
 
     override fun spawnOf(realmId: String): Location? = world(realmId)?.spawnLocation
 
-    override fun mayEnter(player: Player, realmId: String): Boolean {
-        val realm = realm(realmId) ?: return false
+    /** What the rules get to look at. Shared by realm access and gateway conditions. */
+    fun contextFor(player: Player): RealmContext {
         val role = core.roles.roleOf(player.uniqueId)
-        val context = RealmContext(
+        return RealmContext(
             roleId = role?.id,
             tier = role?.tier,
             isSpirit = core.spirits.isSpirit(player.uniqueId),
             flags = core.profiles.profile(player.uniqueId).flags.toMap(),
         )
-        return realm.access.mayEnter(player, context)
     }
+
+    override fun mayEnter(player: Player, realmId: String): Boolean {
+        val realm = realm(realmId) ?: return false
+        val context = contextFor(player)
+        if (realm.access.mayEnter(player, context)) return true
+
+        // ...or anything a later addon decided was also a way in. A bough. A helm. A coin.
+        return granted[realm.id]?.any { it.mayEnter(player, context) } == true
+    }
+
+    override fun openGateway(gateway: Gateway) = gateways.open(gateway)
+
+    override fun closeGateway(id: String) = gateways.close(id)
+
+    override fun gateways(): List<Gateway> = gateways.all()
 
     override fun send(player: Player, realmId: String, reason: String): Boolean {
         val realm = realm(realmId) ?: return false

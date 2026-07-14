@@ -132,6 +132,32 @@ class RoleRetiringEvent(
     }
 }
 
+/**
+ * **The engine is about to put a dead player back in a body.**
+ *
+ * This is the `claiming.default-role` rule: a mortal dies, a mortal is born, five seconds later.
+ * It exists so a hundred-player server doesn't turn into a hundred ghosts.
+ *
+ * **Cancel it if your story has opinions about death.** ChthonicRealm does: you don't come back
+ * until you have crossed the river, and the river has a man on it, and he charges.
+ */
+class PlayerReincarnatingEvent(
+    val uuid: UUID,
+    /** The role they're about to be born into — the configured default. */
+    val roleId: String,
+    val player: Player?,
+) : Event(), Cancellable {
+    private var cancelled = false
+    override fun isCancelled() = cancelled
+    override fun setCancelled(cancel: Boolean) { cancelled = cancel }
+    override fun getHandlers() = HANDLERS
+
+    companion object {
+        @JvmStatic val HANDLERS = HandlerList()
+        @JvmStatic fun getHandlerList() = HANDLERS
+    }
+}
+
 /** A power is about to fire. Cancel it to have a rival god smother it. */
 class PowerUseEvent(
     val player: Player,

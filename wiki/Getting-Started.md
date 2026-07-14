@@ -15,31 +15,6 @@
 this used to depend on the alphabetical order of the files in the folder, which is not a property you
 want a mythology to have.
 
-## ⚠️ First boot needs TWO starts
-
-**Folia will not create a world while the server is running.** So on the very first boot, the engine
-writes every realm an addon declared into `bukkit.yml` and tells you, in a box, to restart:
-
-```
-+------------------------------------------------------------------+
-|  3 REALM(S) HAVE NOT GENERATED YET.
-|     void -> mythos_void
-|     tartarus -> mythos_tartarus
-|     olympus -> mythos_olympus
-|
-|  Folia will not create a world while the server is running, so
-|  they have been written into bukkit.yml instead.
-|
-|  >>> RESTART THE SERVER. <<<
-+------------------------------------------------------------------+
-```
-
-Restart, and Bukkit loads them at boot using the plugin's generator. **You will never see it again.**
-Install a new story addon that declares a new realm, and you get the box once more, for that realm.
-
-> Until you restart, anything that sends a player to a missing realm **does nothing**, and the story
-> looks broken. Because it is. The player is told so, and so is the log.
-
 ## First boot
 
 ```

@@ -1,30 +1,21 @@
 # Architecture
 
 ```
-Mythos  (one Gradle module)
-├── src/main/kotlin/net/crewco/mythos/
-│   │   ┌─ the addon API (published as net.crewco:mythos-addon-api) ─────────────┐
-│   │   │ api/          Mythos, RoleService, SpiritService, EraService,          │
-│   │   │               PowerService, ProfileService, RealmService,              │
-│   │   │               TerraformService, NarratorService, ChronicleService,     │
-│   │   │               ExtensionService, DevService — and every event           │
-│   │   │ addon/        Addon, AddonContext, AddonSchedulers                      │
-│   │   │ command/      @Command, CommandContext   ·  menu/ hud/  frameworks      │
-│   │   └──────────────────────────────────────────────────────────────────────┘
-│   ├── MythosPlugin      the entry point
-│   ├── addon/            the loader and the classloaders (host side)
-│   ├── menu/  hud/       the platform implementations (host side)
-│   ├── engine/           THE ENGINE — every *Impl, the Altar, the HUD, the commands
-│   └── scheduler/ util/  Folia schedulers, cooldowns
-└── build.gradle.kts      one build: the `Mythos` shaded jar + the `apiJar` slice above
+Mythos.jar  (plugins/)
+├── addon-api/            ← the ONE artifact story addons compile against  (published)
+│   ├── addon/            Addon, AddonContext, AddonSchedulers
+│   ├── command/          @Command, CommandContext
+│   ├── menu/  hud/       chest-GUI framework · boss bars, sidebar, action bar
+│   └── api/              Mythos, RoleService, SpiritService, EraService, PowerService,
+│                         ProfileService, RealmService, TerraformService, NarratorService,
+│                         ChronicleService, ExtensionService, DevService — and every event
+└── plugin/
+    ├── addon/            the loader and the classloaders
+    ├── menu/  hud/       the platform implementations
+    └── engine/           THE ENGINE — every *Impl, the Altar, the HUD, and all the commands
 
 plugins/Mythos/addons/    ← the stories live here
 ```
-
-The engine and the API share a source tree but not a boundary: the `apiJar` task packages only the
-`api`, `addon`, `command`, `hud`, and `menu` packages (minus their host implementations), so an addon
-still compiles against a small, stable slice — `compileOnly("net.crewco:mythos-addon-api:…")` — and
-never sees the engine.
 
 ## Three layers, and the line between them
 

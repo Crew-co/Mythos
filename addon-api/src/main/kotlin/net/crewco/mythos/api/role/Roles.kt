@@ -210,6 +210,14 @@ interface RoleService {
     fun openRoles(): List<RoleDefinition>
 
     /**
+     * The role the engine puts roleless players into (`claiming.default-role`), or null.
+     *
+     * An addon that wants to hand somebody a body — a shade crossing the river, a stone thrown over
+     * a shoulder — asks for this rather than hard-coding "mortal", which belongs to a different jar.
+     */
+    fun defaultRole(): String?
+
+    /**
      * Dry run: what would `claim` say? No side effects, no events, no essence spent.
      * Use it to explain *why* a mantle is closed to someone instead of just refusing.
      */

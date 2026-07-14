@@ -10,6 +10,7 @@ import net.crewco.mythos.api.ext.ExtensionService
 import net.crewco.mythos.api.power.PowerService
 import net.crewco.mythos.api.profile.ProfileService
 import net.crewco.mythos.api.realm.RealmService
+import net.crewco.mythos.api.world.TerraformService
 import net.crewco.mythos.api.role.RoleService
 import net.crewco.mythos.api.spirit.SpiritService
 import net.crewco.mythos.api.story.ChronicleService
@@ -100,6 +101,14 @@ class MythosEngine(val plugin: MythosPlugin) {
     lateinit var realms: RealmServiceImpl
         private set
 
+    /** Undo, for the world. The flood must be able to go back down. */
+    lateinit var terraform: TerraformServiceImpl
+        private set
+
+    /** Doors you can walk to. */
+    lateinit var gateways: Gateways
+        private set
+
     fun enable() {
         plugin.saveDefaultConfig()
         config = CoreConfig(plugin.config)
@@ -114,10 +123,16 @@ class MythosEngine(val plugin: MythosPlugin) {
         extensions = ExtensionServiceImpl(this)
         dev = DevServiceImpl(this)
         realms = RealmServiceImpl(this)
+        terraform = TerraformServiceImpl(this, File(dataFolder, "scars.yml"))
+        gateways = Gateways(this, File(dataFolder, "gateways.yml"))
+        realms.gateways = gateways
         chronicle = ChronicleImpl(this, File(dataFolder, "chronicle.yml"))
 
         loadState()
         chronicle.load()
+        terraform.load()
+        gateways.load()
+        gateways.start()
 
         // Published into the same registry addons use. A story addon does
         // `Mythos.from(context)` and gets all five, with no `depends:` at all.
@@ -131,6 +146,7 @@ class MythosEngine(val plugin: MythosPlugin) {
         AddonServices.register(ExtensionService::class.java, extensions)
         AddonServices.register(DevService::class.java, dev)
         AddonServices.register(RealmService::class.java, realms)
+        AddonServices.register(TerraformService::class.java, terraform)
 
         display = MythosHud(this)
         plugin.server.pluginManager.registerEvents(display, plugin)
@@ -198,6 +214,8 @@ class MythosEngine(val plugin: MythosPlugin) {
         profiles.saveAll()
         saveStateNow()
         if (::chronicle.isInitialized) chronicle.save()
+        if (::terraform.isInitialized) terraform.save()
+        if (::gateways.isInitialized) gateways.save()
     }
 
     // ---- state --------------------------------------------------------------
@@ -250,6 +268,11 @@ class MythosEngine(val plugin: MythosPlugin) {
             powers.clearCooldowns(null)
             profiles.wipeAll()
             chronicle.clear()
+
+            // Put the world back. A reset that leaves the last flood standing is not a reset.
+            terraform.scars().forEach { terraform.heal(it) }
+            gateways.clear()
+
             runCatching { storage.deleteState() }
 
             Bukkit.getPluginManager().callEvent(MythosResetEvent(MythosResetEvent.Scope.WORLD, null, by))
@@ -274,6 +297,8 @@ class MythosEngine(val plugin: MythosPlugin) {
             powers.clearCooldowns(null)
             profiles.clearAllFlags() // swallowed, imprisoned, hidden — none of it happened
             profiles.saveAll()
+            terraform.scars().forEach { terraform.heal(it) }
+            gateways.clear()
 
             Bukkit.getPluginManager().callEvent(MythosResetEvent(MythosResetEvent.Scope.STORY, null, by))
             logger.warning("STORY RESET by $by — the ages have not happened.")

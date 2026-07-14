@@ -67,6 +67,9 @@ object RealmRules {
 
     val SPIRITS = RealmAccess { _, ctx -> ctx.isSpirit }
 
+    /** Has a body. The one rule that stops the dead walking home out of the Underworld. */
+    val LIVING = RealmAccess { _, ctx -> !ctx.isSpirit }
+
     /** Anyone carrying a flag — "swallowed", "chained", "dead". */
     fun flagged(key: String) = RealmAccess { _, ctx -> ctx.flags.containsKey(key) }
 
@@ -99,6 +102,18 @@ data class RealmDefinition(
     /** Applied continuously to anyone standing in it. The Void is cold; Tartarus is worse. */
     val ambient: List<PotionEffectType> = emptyList(),
 
+    /**
+     * Played, quietly and occasionally, to whoever is standing here. e.g.
+     * "minecraft:ambient.cave", "minecraft:entity.ghast.ambient".
+     *
+     * This does more for the feeling of a place than any amount of chat text. A world that is
+     * silent is a world that is a *level*.
+     */
+    val ambientSound: String? = null,
+
+    /** Drifting, ambient particles. e.g. "SOUL_FIRE_FLAME", "ASH", "END_ROD". */
+    val ambientParticle: String? = null,
+
     /** SKY: the height of the island. */
     val platformY: Int = 200,
     /** SKY / VOID: what the platform is made of, and how wide. */
@@ -121,6 +136,18 @@ interface RealmService {
      */
     fun register(realm: RealmDefinition)
 
+    /**
+     * **Open a new way into a realm you didn't write.**
+     *
+     * The Underworld's access rules belong to whichever addon declared it. This adds an *additional*
+     * way in — OR'd with whatever is already there — so a jar written two years later can decide
+     * that anyone carrying a golden bough may walk into somebody else's House of the Dead, and that
+     * addon needs no change, no knowledge of it, and no version bump.
+     *
+     * The same mechanism as `roles.extend`, for places instead of people.
+     */
+    fun grant(realmId: String, access: RealmAccess)
+
     fun realm(id: String): RealmDefinition?
     fun realms(): List<RealmDefinition>
 
@@ -142,4 +169,17 @@ interface RealmService {
      * and how Kronos swallows a god. Being *sent* somewhere is not the same as being allowed in.
      */
     fun send(player: Player, realmId: String, reason: String = ""): Boolean
+
+    // ---- doors ---------------------------------------------------------------
+
+    /**
+     * A mouth in the world that anyone can walk to. The destination realm's access rules still
+     * apply — so the entrance to the Underworld can sit in a field in plain sight and still refuse
+     * the living, which is the version of that story worth telling.
+     */
+    fun openGateway(gateway: Gateway)
+
+    fun closeGateway(id: String)
+
+    fun gateways(): List<Gateway>
 }
