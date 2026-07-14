@@ -27,10 +27,20 @@ enum class RealmKind {
     /** A normal generated overworld, of its own. */
     OVERWORLD,
 
-    /** Nether generation — for the places that are hot, or dead, or both. */
+    /**
+     * **A cavern.** Solid rock with a hollow band carved out of it, a floor, and no sky. Ever.
+     *
+     * Use this for Tartarus and the Underworld. It is not a Nether world — it *cannot* be, because
+     * worlds are created from `bukkit.yml` (Folia forbids runtime creation) and that cannot set an
+     * environment. Which turns out to be a mercy: it is not fire. It is a great grey plain, and it
+     * goes on.
+     */
+    CAVERN,
+
+    /** Nether generation. **Requires runtime world creation — does NOT work on Folia.** Use CAVERN. */
     NETHER,
 
-    /** The End's generation. Bleak and floating and wrong. */
+    /** The End's generation. **Requires runtime world creation — does NOT work on Folia.** */
     END,
 
     /** Void, with an island of your chosen stone at [RealmDefinition.platformY]. Olympus. */
@@ -114,8 +124,14 @@ data class RealmDefinition(
     /** Drifting, ambient particles. e.g. "SOUL_FIRE_FLAME", "ASH", "END_ROD". */
     val ambientParticle: String? = null,
 
-    /** SKY: the height of the island. */
+    /** SKY: the height of the island. CAVERN: the floor you walk on. */
     val platformY: Int = 200,
+
+    /** CAVERN: the roof. Everything above it is solid rock, so there is no sky. */
+    val roofY: Int = 120,
+
+    /** CAVERN: what it's made of. */
+    val stone: String = "DEEPSLATE",
     /** SKY / VOID: what the platform is made of, and how wide. */
     val platformMaterial: String = "QUARTZ_BLOCK",
     val platformRadius: Int = 24,

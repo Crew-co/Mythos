@@ -29,17 +29,17 @@ chaos → titanomachy → olympian-order → the-abduction → theft-of-fire
 
 ## The nine stories
 
-| Addon                                                                    | Era | |
-|--------------------------------------------------------------------------|---|---|
-| [EraOfCreation](https://github.com/Crew-co/Mythos-EraOfCreation)         | `chaos` | eight seats. The Titans cannot be claimed — they are **born**, and only Gaia can bear them. |
-| [Titanomachy](https://github.com/Crew-co/Mythos-Titanomachy)             | `titanomachy` | Kronos's stomach is **a world**, and the gods he ate are in it, together. |
-| [OlympianOrder](https://github.com/Crew-co/Mythos-OlympianOrder)         | `olympian-order` | the lots are drawn **blind** — and a god's powers only work in the domain his hand closed on. |
-| [ChthonicRealm](https://github.com/Crew-co/Mythos-ChthonicRealm)         | `the-abduction` | death becomes a place. **The spirit queue now runs through a player's hands**, and he charges. |
-| [TheftOfFire](https://github.com/Crew-co/Mythos-TheftOfFire)             | `theft-of-fire` | it **cannot finish its own story**. Prometheus waits on the rock for a jar that doesn't exist yet. |
-| [AgesOfMan](https://github.com/Crew-co/Mythos-AgesOfMan)                 | `ages-of-man` | the flood. Everyone dies at once, and two people throw rocks over their shoulders to bring them back **in order**. |
-| [Perseus](https://github.com/Crew-co/Mythos-Perseus)                     | `the-heroic-age` | Medusa is a player. **She kills by being looked at.** |
-| [LaboursOfHeracles](https://github.com/Crew-co/Mythos-LaboursOfHeracles) | `the-labours` | the twelfth labour needs **Hades — a player — to say yes**, and he may not. |
-| [Argonautica](https://github.com/Crew-co/Mythos-Argonautica)             | `the-golden-fleece` | fifty players on one boat, and **Medea can simply refuse**. |
+| Addon | Era | |
+|---|---|---|
+| [EraOfCreation](https://github.com/Crew-co/EraOfCreation) | `chaos` | eight seats. The Titans cannot be claimed — they are **born**, and only Gaia can bear them. |
+| [Titanomachy](https://github.com/Crew-co/Titanomachy) | `titanomachy` | Kronos's stomach is **a world**, and the gods he ate are in it, together. |
+| [OlympianOrder](https://github.com/Crew-co/OlympianOrder) | `olympian-order` | the lots are drawn **blind** — and a god's powers only work in the domain his hand closed on. |
+| [ChthonicRealm](https://github.com/Crew-co/ChthonicRealm) | `the-abduction` | death becomes a place. **The spirit queue now runs through a player's hands**, and he charges. |
+| [TheftOfFire](https://github.com/Crew-co/TheftOfFire) | `theft-of-fire` | it **cannot finish its own story**. Prometheus waits on the rock for a jar that doesn't exist yet. |
+| [AgesOfMan](https://github.com/Crew-co/AgesOfMan) | `ages-of-man` | the flood. Everyone dies at once, and two people throw rocks over their shoulders to bring them back **in order**. |
+| [Perseus](https://github.com/Crew-co/Perseus) | `the-heroic-age` | Medusa is a player. **She kills by being looked at.** |
+| [LaboursOfHeracles](https://github.com/Crew-co/LaboursOfHeracles) | `the-labours` | the twelfth labour needs **Hades — a player — to say yes**, and he may not. |
+| [Argonautica](https://github.com/Crew-co/Argonautica) | `the-golden-fleece` | fifty players on one boat, and **Medea can simply refuse**. |
 
 ## Install
 

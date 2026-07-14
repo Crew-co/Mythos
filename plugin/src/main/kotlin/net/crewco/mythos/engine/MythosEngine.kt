@@ -184,11 +184,25 @@ class MythosEngine(val plugin: MythosPlugin) {
         // — only then can we know which age the world is in. (Addons load synchronously
         // inside onEnable, so this fires strictly after all of them.)
         schedulers.globalDelayed(1) {
-            eras.bootstrap()
-            Bukkit.getOnlinePlayers().forEach { player ->
-                val role = roles.roleOf(player.uniqueId)
-                schedulers.entity(player) {
-                    if (role != null) roles.applyBody(player, role) else spirits.makeSpirit(player, "the world was remade")
+            val starting = eras.bootstrap()
+
+            /*
+             * BUG, fixed: we used to place players in the same breath as bootstrapping the era.
+             *
+             * But starting an age is a TRANSITION — the prologue plays, the world holds still, and
+             * `current` is not set until the interlude ends. So PlayerBecameSpiritEvent fired while
+             * currentId() was still "", every story addon's "is this my era?" check said no, and the
+             * spirits of the Age of Chaos were left standing in the overworld instead of the Void.
+             *
+             * Wait for the age to actually begin.
+             */
+            val settle = if (starting) config.interludeTicks + 40 else 0
+            schedulers.globalDelayed(settle) {
+                Bukkit.getOnlinePlayers().forEach { player ->
+                    val role = roles.roleOf(player.uniqueId)
+                    schedulers.entity(player) {
+                        if (role != null) roles.applyBody(player, role) else spirits.makeSpirit(player, "the world was remade")
+                    }
                 }
             }
         }

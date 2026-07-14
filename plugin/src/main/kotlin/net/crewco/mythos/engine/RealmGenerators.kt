@@ -85,3 +85,45 @@ class OlympusGenerator(
         }
     }
 }
+
+/**
+ * **A cavern.** Solid rock, with a hollow band carved out of it, a floor, and a ceiling.
+ *
+ * This exists because of a Folia constraint with a real design consequence: **worlds cannot be
+ * created at runtime**, so the only supported way to have one is `bukkit.yml` + a plugin generator —
+ * and `bukkit.yml` cannot set a world's *environment*. You get NORMAL, and that is all you get.
+ *
+ * So Tartarus and the House of Hades are not Nether worlds any more. They are enormous enclosed
+ * caverns in a normal world, which — having actually stood in one — is a considerably better
+ * Underworld than a nether-waste anyway. It is not fire. It is a great grey plain, and it goes on.
+ */
+class CavernGenerator(
+    private val floorY: Int,
+    private val roofY: Int,
+    private val stone: Material,
+    private val floor: Material,
+) : ChunkGenerator() {
+
+    override fun shouldGenerateNoise() = false
+    override fun shouldGenerateSurface() = false
+    override fun shouldGenerateCaves() = false
+    override fun shouldGenerateDecorations() = false
+    override fun shouldGenerateMobs() = true      // things live down here
+    override fun shouldGenerateStructures() = false
+
+    override fun generateSurface(world: WorldInfo, random: Random, chunkX: Int, chunkZ: Int, chunk: ChunkData) {
+        val bottom = world.minHeight
+        for (x in 0 until 16) {
+            for (z in 0 until 16) {
+                // Bedrock floor, a few metres of rock, then the floor you walk on.
+                chunk.setBlock(x, bottom, z, Material.BEDROCK)
+                for (y in bottom + 1 until floorY) chunk.setBlock(x, y, z, stone)
+                chunk.setBlock(x, floorY, z, floor)
+
+                // ...the hollow...
+                // ...and everything above the roof is solid, so there is no sky. There is never a sky.
+                for (y in roofY..world.maxHeight - 1) chunk.setBlock(x, y, z, stone)
+            }
+        }
+    }
+}
