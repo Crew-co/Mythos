@@ -2,10 +2,12 @@ package net.crewco.mythos.api
 
 import net.crewco.mythos.addon.AddonContext
 import net.crewco.mythos.addon.service
+import net.crewco.mythos.api.dev.DevService
 import net.crewco.mythos.api.era.EraService
 import net.crewco.mythos.api.ext.ExtensionService
 import net.crewco.mythos.api.power.PowerService
 import net.crewco.mythos.api.profile.ProfileService
+import net.crewco.mythos.api.realm.RealmService
 import net.crewco.mythos.api.role.RoleService
 import net.crewco.mythos.api.spirit.SpiritService
 import net.crewco.mythos.api.story.ChronicleService
@@ -56,6 +58,12 @@ class Mythos(
 
     /** How one story reaches into another. Load order doesn't matter. */
     val extensions: ExtensionService,
+
+    /** Solo mode. Ask it for any number that assumes a crowd — see [DevService.threshold]. */
+    val dev: DevService,
+
+    /** The Void, Gaia, Tartarus, Olympus. Real worlds, with rules about who may stand in them. */
+    val realms: RealmService,
 ) {
     companion object {
         fun from(context: AddonContext): Mythos = Mythos(
@@ -67,6 +75,8 @@ class Mythos(
             narrator = context.service<NarratorService>() ?: missing("NarratorService"),
             chronicle = context.service<ChronicleService>() ?: missing("ChronicleService"),
             extensions = context.service<ExtensionService>() ?: missing("ExtensionService"),
+            dev = context.service<DevService>() ?: missing("DevService"),
+            realms = context.service<RealmService>() ?: missing("RealmService"),
         )
 
         private fun missing(what: String): Nothing = error(

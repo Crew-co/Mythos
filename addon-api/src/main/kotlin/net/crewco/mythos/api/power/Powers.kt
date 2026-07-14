@@ -46,4 +46,7 @@ interface PowerService {
 
     /** Story addons can wipe or impose cooldowns (a boon from Hermes, a curse from Hera). */
     fun setCooldown(uuid: UUID, powerId: String, seconds: Long)
+
+    /** Every cooldown this player is sitting on, gone. `null` = everyone. */
+    fun clearCooldowns(uuid: UUID? = null)
 }

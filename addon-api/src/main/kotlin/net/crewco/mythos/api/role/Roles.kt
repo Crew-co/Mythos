@@ -232,8 +232,14 @@ interface RoleService {
     /** Bypass every gate — for admins, and for stories that *choose* their cast. */
     fun assign(uuid: UUID, roleId: String, reason: String)
 
-    /** Strip the role; the player drops back into the spirit world. */
-    fun release(uuid: UUID, reason: String)
+    /**
+     * Strip the role; the player drops back into the spirit world.
+     *
+     * @param quiet no server-wide broadcast, and no reincarnation into the default role.
+     *              For when you are drowning the entire human race at once and would rather
+     *              narrate it yourself, in one line, properly.
+     */
+    fun release(uuid: UUID, reason: String, quiet: Boolean = false)
 
     fun seal(roleId: String, reason: String)
     fun open(roleId: String, reason: String)

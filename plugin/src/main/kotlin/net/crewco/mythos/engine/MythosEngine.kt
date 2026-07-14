@@ -3,10 +3,13 @@ package net.crewco.mythos.engine
 import net.crewco.mythos.MythosPlugin
 import net.crewco.mythos.addon.AddonSchedulers
 import net.crewco.mythos.addon.AddonServices
+import net.crewco.mythos.api.dev.DevService
 import net.crewco.mythos.api.era.EraService
+import net.crewco.mythos.api.event.MythosResetEvent
 import net.crewco.mythos.api.ext.ExtensionService
 import net.crewco.mythos.api.power.PowerService
 import net.crewco.mythos.api.profile.ProfileService
+import net.crewco.mythos.api.realm.RealmService
 import net.crewco.mythos.api.role.RoleService
 import net.crewco.mythos.api.spirit.SpiritService
 import net.crewco.mythos.api.story.ChronicleService
@@ -89,6 +92,14 @@ class MythosEngine(val plugin: MythosPlugin) {
     lateinit var extensions: ExtensionServiceImpl
         private set
 
+    /** Solo mode. See DevService — you cannot playtest a hundred-player myth with one player. */
+    lateinit var dev: DevServiceImpl
+        private set
+
+    /** The cosmos: the Void, Gaia, Tartarus, Olympus. Actual worlds, with rules about who may stand in them. */
+    lateinit var realms: RealmServiceImpl
+        private set
+
     fun enable() {
         plugin.saveDefaultConfig()
         config = CoreConfig(plugin.config)
@@ -101,6 +112,8 @@ class MythosEngine(val plugin: MythosPlugin) {
         powers = PowerServiceImpl(this)
         narrator = NarratorImpl(this)
         extensions = ExtensionServiceImpl(this)
+        dev = DevServiceImpl(this)
+        realms = RealmServiceImpl(this)
         chronicle = ChronicleImpl(this, File(dataFolder, "chronicle.yml"))
 
         loadState()
@@ -116,12 +129,18 @@ class MythosEngine(val plugin: MythosPlugin) {
         AddonServices.register(NarratorService::class.java, narrator)
         AddonServices.register(ChronicleService::class.java, chronicle)
         AddonServices.register(ExtensionService::class.java, extensions)
+        AddonServices.register(DevService::class.java, dev)
+        AddonServices.register(RealmService::class.java, realms)
 
         display = MythosHud(this)
         plugin.server.pluginManager.registerEvents(display, plugin)
         display.start()
 
         plugin.server.pluginManager.registerEvents(CoreListener(this), plugin)
+
+        val realmListener = RealmListener(this)
+        plugin.server.pluginManager.registerEvents(realmListener, plugin)
+        realmListener.startAmbient()
 
         plugin.commands.register(ClaimCommand(this))
         plugin.commands.register(RolesCommand(this))
@@ -161,11 +180,24 @@ class MythosEngine(val plugin: MythosPlugin) {
         logger.info("Engine awake: ${roles.definitions().size} roles, ${eras.eras().size} eras. Waiting on the stories.")
     }
 
+    /**
+     * Build every realm an addon declared.
+     *
+     * Called by MythosPlugin AFTER addons.loadAll() and still inside onEnable — the only
+     * window in which creating a world is legal on Folia, and the only moment at which we
+     * know the full list.
+     */
+    fun createRealms() {
+        realms.createAll()
+    }
+
     fun disable() {
+        // enable() can fail halfway (a bad config, a corrupt state.yml). Don't compound
+        // it by throwing UninitializedPropertyAccessException on the way out.
         if (!::profiles.isInitialized) return
         profiles.saveAll()
         saveStateNow()
-        chronicle.save()
+        if (::chronicle.isInitialized) chronicle.save()
     }
 
     // ---- state --------------------------------------------------------------
@@ -196,6 +228,79 @@ class MythosEngine(val plugin: MythosPlugin) {
             state.getString("spirits.interests.$uuid")?.let { interests[u] = it }
         }
         spirits.load(state.getStringList("spirits.queue").mapNotNull { it.toUuidOrNull() }, interests)
+        dev.load(state.getBoolean("dev", false))
+        if (dev.enabled) logger.warning("SOLO MODE IS ON. Gates, costs and cooldowns are off for admins.")
+    }
+
+    // ---- the reset ----------------------------------------------------------
+
+    /**
+     * Back to before the world.
+     *
+     * The engine can only wipe what the engine owns. It has no idea that Titanomachy
+     * keeps a kill tally, or that OlympianOrder remembers where it put Olympus — so it
+     * fires MythosResetEvent and the addons clean up after themselves. Anything that
+     * doesn't listen keeps its state, and that's on it.
+     */
+    fun resetWorld(by: String) {
+        schedulers.global {
+            eras.resetAll()
+            roles.resetAll()
+            spirits.resetAll()
+            powers.clearCooldowns(null)
+            profiles.wipeAll()
+            chronicle.clear()
+            runCatching { storage.deleteState() }
+
+            Bukkit.getPluginManager().callEvent(MythosResetEvent(MythosResetEvent.Scope.WORLD, null, by))
+            logger.warning("WORLD RESET by $by — everything is gone.")
+
+            // And then the world begins again, from whatever chapter is first.
+            schedulers.globalDelayed(20) {
+                eras.bootstrap()
+                Bukkit.getOnlinePlayers().forEach { player ->
+                    schedulers.entity(player) { spirits.makeSpirit(player, "the world was unmade and started over") }
+                }
+            }
+        }
+    }
+
+    /** The story only: eras, objectives, mantles. Players keep their essence and their epithets. */
+    fun resetStory(by: String) {
+        schedulers.global {
+            eras.resetAll()
+            roles.resetAll()
+            spirits.resetAll()
+            powers.clearCooldowns(null)
+            profiles.clearAllFlags() // swallowed, imprisoned, hidden — none of it happened
+            profiles.saveAll()
+
+            Bukkit.getPluginManager().callEvent(MythosResetEvent(MythosResetEvent.Scope.STORY, null, by))
+            logger.warning("STORY RESET by $by — the ages have not happened.")
+
+            schedulers.globalDelayed(20) {
+                eras.bootstrap()
+                Bukkit.getOnlinePlayers().forEach { player ->
+                    schedulers.entity(player) { spirits.makeSpirit(player, "the story was rewound") }
+                }
+            }
+        }
+    }
+
+    /** One player, back to a nameless spirit. */
+    fun resetPlayer(uuid: UUID, by: String) {
+        schedulers.global {
+            roles.release(uuid, "unmade by $by")
+            powers.clearCooldowns(uuid)
+            profiles.wipe(uuid)
+            spirits.dequeue(uuid)
+            Bukkit.getPluginManager().callEvent(MythosResetEvent(MythosResetEvent.Scope.PLAYER, uuid, by))
+
+            Bukkit.getPlayer(uuid)?.let { player ->
+                schedulers.entity(player) { spirits.makeSpirit(player, "you have been unwritten") }
+            }
+            saveState()
+        }
     }
 
     /** Fire-and-forget save. Safe from any region. */
@@ -205,6 +310,7 @@ class MythosEngine(val plugin: MythosPlugin) {
 
     fun saveStateNow() {
         val state = YamlConfiguration()
+        state.set("dev", dev.enabled)
         state.set("era.current", eras.snapshotCurrent())
         state.set("era.completed", eras.snapshotCompleted())
         state.set("era.passed", eras.snapshotPassed())

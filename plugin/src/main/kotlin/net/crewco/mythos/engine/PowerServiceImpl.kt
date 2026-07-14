@@ -36,7 +36,7 @@ class PowerServiceImpl(private val core: MythosEngine) : PowerService {
             player.sendMessage(mm("<red>That power is not yours to wield."))
             return false
         }
-        val remaining = cooldown(player.uniqueId, id)
+        val remaining = if (core.dev.bypasses(player)) 0 else cooldown(player.uniqueId, id)
         if (remaining > 0) {
             player.sendMessage(mm("<red>${power.displayName} is spent. <gray>(${remaining}s)"))
             return false
@@ -63,5 +63,9 @@ class PowerServiceImpl(private val core: MythosEngine) : PowerService {
     override fun setCooldown(uuid: UUID, powerId: String, seconds: Long) {
         cooldowns.getOrPut(uuid) { ConcurrentHashMap() }[powerId.lowercase()] =
             System.currentTimeMillis() + seconds * 1000
+    }
+
+    override fun clearCooldowns(uuid: UUID?) {
+        if (uuid == null) cooldowns.clear() else cooldowns.remove(uuid)
     }
 }

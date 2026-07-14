@@ -112,6 +112,11 @@ class RoleServiceImpl(private val core: MythosEngine) : RoleService {
         if (core.eras.isTransitioning) return ClaimResult.Deny("The world is between ages. Wait — it always starts again.")
         if (isSealed(definition.id)) return ClaimResult.Deny("${definition.displayName} is sealed away.")
         if (!isOpen(definition.id)) return ClaimResult.Deny("${definition.displayName} is already taken.")
+
+        // Solo mode: an admin skips every gate below this line. Not the seat count, and
+        // not the seal — a bypass that lets you break the *engine's* invariants is a
+        // bypass that lets you file bugs against yourself.
+        if (core.dev.bypasses(player)) return ClaimResult.Allow
         if (core.config.requirePermission && !player.hasPermission("mythos.claim.${definition.id}")) {
             return ClaimResult.Deny("The Fates have not written your name for ${definition.displayName}.")
         }
@@ -151,7 +156,7 @@ class RoleServiceImpl(private val core: MythosEngine) : RoleService {
             return ClaimResult.Deny("You already walk as ${definitions[profile.roleId]?.displayName ?: profile.roleId}. Abdicate first: /role abdicate")
         }
 
-        val cooldownUntil = claimCooldowns[uuid] ?: 0L
+        val cooldownUntil = if (core.dev.bypasses(player)) 0L else claimCooldowns[uuid] ?: 0L
         if (System.currentTimeMillis() < cooldownUntil) {
             val seconds = (cooldownUntil - System.currentTimeMillis()) / 1000
             return ClaimResult.Deny("The Fates are not done with your last life. ($seconds s)")
@@ -169,7 +174,7 @@ class RoleServiceImpl(private val core: MythosEngine) : RoleService {
         val verdict = gates(player, definition, waiveQueue = promisedTo == uuid)
         if (verdict is ClaimResult.Deny) return verdict
 
-        val cost = core.config.essenceCost(definition.tier)
+        val cost = if (core.dev.bypasses(player)) 0 else core.config.essenceCost(definition.tier)
 
         // The one true race: check the seat and take it, atomically.
         synchronized(lock) {
@@ -275,7 +280,8 @@ class RoleServiceImpl(private val core: MythosEngine) : RoleService {
 
     // ---- losing a mantle ----------------------------------------------------
 
-    override fun release(uuid: UUID, reason: String) = release(uuid, reason, quiet = false, cooldown = true)
+    override fun release(uuid: UUID, reason: String, quiet: Boolean) =
+        release(uuid, reason, quiet = quiet, cooldown = !quiet)
 
     /**
      * @param quiet    no server-wide broadcast (retiring a 60-strong army would be 60 lines)
@@ -311,6 +317,32 @@ class RoleServiceImpl(private val core: MythosEngine) : RoleService {
 
         if (player != null) {
             core.schedulers.entity(player) { core.spirits.makeSpirit(player, "you have lost ${definition.displayName}") }
+        }
+
+        /*
+         * Reincarnation.
+         *
+         * With permadeath on, a mortal who dies loses the role and drops into the spirit
+         * world — where they'd sit, bodiless, until they logged out and back in and the
+         * join handler put them back in a body. On a hundred-player server that is a
+         * catastrophe, and it took writing actual mortals to notice it.
+         *
+         * So: if the role you just lost IS the default role, you get another one. Five
+         * seconds as a ghost, then a new body. A mortal dies and a mortal is born.
+         *
+         * A GOD who dies gets nothing of the kind. That asymmetry is the entire point.
+         */
+        val fallback = core.config.defaultRole
+        if (!quiet && fallback.isNotEmpty() && fallback == id) {
+            core.schedulers.globalDelayed(100) {
+                if (isOpen(fallback) && core.profiles.profile(uuid).roleId == null) {
+                    claimCooldowns.remove(uuid) // dying is not a cooldown offence
+                    assign(uuid, fallback, "born again")
+                    Bukkit.getPlayer(uuid)?.sendMessage(
+                        mm("<gray>You wake up somewhere else, as someone else. <dark_gray><i>The world does not comment."),
+                    )
+                }
+            }
         }
 
         // Who takes it up?
@@ -466,6 +498,17 @@ class RoleServiceImpl(private val core: MythosEngine) : RoleService {
     internal fun snapshotHolders(): Map<String, List<UUID>> = holders.mapValues { it.value.toList() }
     internal fun snapshotSealed(): List<String> = sealedRoles.toList()
     internal fun snapshotHeirs(): Map<UUID, UUID> = heirs.toMap()
+
+    /** Wipe every mantle. Nobody is anybody. */
+    internal fun resetAll() {
+        synchronized(lock) {
+            holders.values.forEach { it.clear() }
+            sealedRoles.clear()
+            heirs.clear()
+            claimCooldowns.clear()
+        }
+        lastAnnounce.set(0)
+    }
 
     private companion object {
         const val ANNOUNCE_COOLDOWN_MS = 60_000L

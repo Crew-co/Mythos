@@ -9,6 +9,7 @@ import net.crewco.mythos.api.story.Beat
 import net.crewco.mythos.command.CommandContext.Companion.mm
 import org.bukkit.Bukkit
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CopyOnWriteArraySet
 
 /**
@@ -39,6 +40,22 @@ class EraServiceImpl(private val core: MythosEngine) : EraService {
     /** Objectives other addons bolted onto someone else's chapter. */
     private val extraObjectives = ConcurrentHashMap<String, CopyOnWriteArraySet<Objective>>()
 
+    /**
+     * Splices, queued until every addon has registered its chapters.
+     *
+     * Linking during onEnable meant the shape of the story depended on the alphabetical order
+     * of the jars in the folder, which is not a property you want a mythology to have.
+     */
+    private sealed interface Link {
+        val era: EraDefinition
+
+        data class After(override val era: EraDefinition, val target: String) : Link
+        data class Before(override val era: EraDefinition, val target: String) : Link
+        data class Append(override val era: EraDefinition) : Link
+    }
+
+    private val pendingLinks = CopyOnWriteArrayList<Link>()
+
     @Volatile
     private var current: String = ""
 
@@ -63,33 +80,64 @@ class EraServiceImpl(private val core: MythosEngine) : EraService {
     override fun nextOf(eraId: String): String? = chainOverrides[eraId] ?: eras[eraId]?.next
 
     override fun insertAfter(afterEraId: String, era: EraDefinition) {
-        val after = eras[afterEraId] ?: run {
-            // The era it wanted to follow isn't installed. Register anyway — it's still a
-            // valid chapter, just an orphan on this server. Not an error: a story that
-            // isn't being told.
-            core.logger.info("'${era.id}' wanted to follow '$afterEraId', which isn't installed. Registered unlinked.")
-            register(era)
-            return
-        }
         register(era)
-        val displaced = nextOf(after.id)      // whatever used to come next...
-        chainOverrides[after.id] = era.id     // ...now comes after us...
-        displaced?.let { chainOverrides[era.id] = it } // ...and we point at it.
-        core.logger.info("Spliced '${era.id}' between '${after.id}' and '${displaced ?: "the end"}'")
+        pendingLinks += Link.After(era, afterEraId)
     }
 
     override fun insertBefore(beforeEraId: String, era: EraDefinition) {
         register(era)
-        chainOverrides[era.id] = beforeEraId
-        val predecessor = eras.values.firstOrNull { nextOf(it.id) == beforeEraId && it.id != era.id }
-        if (predecessor != null) {
-            chainOverrides[predecessor.id] = era.id
-            core.logger.info("Spliced '${era.id}' between '${predecessor.id}' and '$beforeEraId'")
-        } else {
-            // Nothing pointed at it — so this is the new opening chapter. Give it a lower
-            // `order` than the era it precedes, or bootstrap won't pick it as the start.
-            core.logger.info("Spliced '${era.id}' in front of '$beforeEraId' as the new beginning")
+        pendingLinks += Link.Before(era, beforeEraId)
+    }
+
+    override fun append(era: EraDefinition) {
+        register(era)
+        pendingLinks += Link.Append(era)
+    }
+
+    /**
+     * Every splice, applied once, in one place, after every addon has registered every chapter.
+     *
+     * Appends are done LAST and in `order`, so two addons both saying "put me at the end" end
+     * up in the order the story implies rather than the order the filesystem happened to list
+     * their jars in.
+     */
+    private fun applyLinks() {
+        pendingLinks.filterIsInstance<Link.After>().forEach { link ->
+            val after = eras[link.target] ?: run {
+                core.logger.info("'${link.era.id}' wanted to follow '${link.target}', which isn't installed. Left unlinked.")
+                return@forEach
+            }
+            val displaced = nextOf(after.id)
+            chainOverrides[after.id] = link.era.id
+            displaced?.let { chainOverrides[link.era.id] = it }
+            core.logger.info("Spliced '${link.era.id}' between '${after.id}' and '${displaced ?: "the end"}'")
         }
+
+        pendingLinks.filterIsInstance<Link.Before>().forEach { link ->
+            if (eras[link.target] == null) {
+                core.logger.info("'${link.era.id}' wanted to precede '${link.target}', which isn't installed. Left unlinked.")
+                return@forEach
+            }
+            chainOverrides[link.era.id] = link.target
+            eras.values.firstOrNull { nextOf(it.id) == link.target && it.id != link.era.id }?.let { predecessor ->
+                chainOverrides[predecessor.id] = link.era.id
+                core.logger.info("Spliced '${link.era.id}' between '${predecessor.id}' and '${link.target}'")
+            }
+        }
+
+        pendingLinks.filterIsInstance<Link.Append>().sortedBy { it.era.order }.forEach { link ->
+            val tail = chain().lastOrNull { existing ->
+                existing.id != link.era.id && nextOf(existing.id).let { it == null || eras[it] == null }
+            }
+            if (tail == null) {
+                core.logger.info("'${link.era.id}' is the start of the story — nothing precedes it.")
+                return@forEach
+            }
+            chainOverrides[tail.id] = link.era.id
+            core.logger.info("Appended '${link.era.id}' after '${tail.id}'")
+        }
+
+        pendingLinks.clear()
     }
 
     override fun chain(): List<EraDefinition> {
@@ -222,8 +270,23 @@ class EraServiceImpl(private val core: MythosEngine) : EraService {
     internal fun snapshotCompleted() = completed.toList()
     internal fun snapshotPassed() = passed.toList()
 
+    /**
+     * Back to before the beginning. The eras and their chain stay registered — the addons
+     * put those there at boot and they'd come back on the next restart anyway — but
+     * nothing has *happened* any more.
+     */
+    internal fun resetAll() {
+        completed.clear()
+        passed.clear()
+        current = ""
+        transitioning = false
+    }
+
     /** One tick after startup, when every addon has registered its chapter. */
     internal fun bootstrap() {
+        // Wire the chain FIRST. Until now the shape of the story depended on jar load order.
+        applyLinks()
+
         if (current.isNotEmpty() && eras.contains(current)) {
             core.logger.info("Resuming the age of '$current'.")
             return

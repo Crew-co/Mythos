@@ -44,6 +44,12 @@ class ChronicleImpl(private val engine: MythosEngine, private val file: File) : 
 
     override fun size(): Int = entries.size
 
+    /** The world never happened. */
+    fun clear() {
+        entries.clear()
+        engine.schedulers.async { save() }
+    }
+
     /** Blocking. Async only. */
     @Synchronized
     fun save() {
