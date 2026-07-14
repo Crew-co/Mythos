@@ -36,6 +36,10 @@ class Storage(private val dataFolder: File) {
         yaml.save(playerFile(uuid))
     }
 
+    fun deleteState() {
+        if (stateFile.exists()) stateFile.delete()
+    }
+
     fun knownPlayers(): List<UUID> =
         playersDir.listFiles { f -> f.name.endsWith(".yml") }
             ?.mapNotNull { runCatching { UUID.fromString(it.nameWithoutExtension) }.getOrNull() }

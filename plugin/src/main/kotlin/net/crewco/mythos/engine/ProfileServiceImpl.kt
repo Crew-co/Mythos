@@ -90,6 +90,34 @@ class ProfileServiceImpl(private val storage: Storage) : ProfileService {
 
     override fun saveAll() = cache.keys.forEach(::save)
 
+    override fun clearAllFlags() {
+        // Cached players first...
+        cache.values.forEach { it.flags.clear() }
+
+        // ...then everyone who isn't online. Cheap: this only runs on an explicit reset.
+        storage.knownPlayers()
+            .filterNot { uuid -> cache.containsKey(uuid) }
+            .forEach { uuid ->
+                val yaml = storage.loadPlayer(uuid)
+                yaml.set("flags", null)
+                runCatching { storage.savePlayer(uuid, yaml) }
+            }
+
+        saveAll()
+    }
+
+    /** Every profile, gone: essence, favor, titles, past lives, flags. */
+    fun wipeAll() {
+        cache.clear()
+        storage.knownPlayers().forEach { runCatching { storage.playerFile(it).delete() } }
+    }
+
+    /** One player, back to nothing. */
+    fun wipe(uuid: UUID) {
+        cache.remove(uuid)
+        runCatching { storage.playerFile(uuid).delete() }
+    }
+
     fun unload(uuid: UUID) {
         save(uuid)
         cache.remove(uuid)

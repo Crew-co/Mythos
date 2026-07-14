@@ -76,6 +76,20 @@ interface EraService {
     /** The same, the other way round. */
     fun insertBefore(beforeEraId: String, era: EraDefinition)
 
+    /**
+     * Attach at the END of whatever chain currently exists — after the last era that leads
+     * nowhere, or nowhere *installed*.
+     *
+     * For a chapter that can follow anything. TheftOfFire says its `next` is `ages-of-man`,
+     * and nobody has written `ages-of-man`, so the chain dead-ends there. A Heracles addon
+     * calls `append` and hooks itself onto the tail instead of falling out of the story —
+     * without knowing or caring which jars the server happens to have.
+     *
+     * Your own declared `next` is preserved: you're joining the end of the chain, not
+     * inheriting whatever the tail was pointing at.
+     */
+    fun append(era: EraDefinition)
+
     /** Whatever currently follows this era — the override if one was spliced in, else its declared `next`. */
     fun nextOf(eraId: String): String?
 

@@ -71,6 +71,10 @@ class MythosPlugin : JavaPlugin() {
         addons = AddonManager(this)
         addons.loadAll()
 
+        // Every addon has now declared its realms. Build the cosmos — worlds can only be
+        // created during startup, and this is the last moment we're still in it.
+        engine.createRealms()
+
         logger.info("Enabled ${pluginMeta.name} v${pluginMeta.version} (Folia: ${Schedulers.isFolia})")
     }
 

@@ -44,6 +44,16 @@ interface MythosProfile {
 interface ProfileService {
     /** Never null — a profile is created on first sight of a player. */
     fun profile(uuid: UUID): MythosProfile
+
+    /**
+     * Wipe [MythosProfile.flags] on EVERY player — essence, titles and past lives survive.
+     *
+     * The engine calls this on a story reset, because flags are by definition the story's
+     * per-player state: "swallowed by Kronos", "imprisoned in Tartarus", "hidden on Crete".
+     * A world where the Titanomachy never happened cannot contain someone still leashed
+     * inside Kronos's stomach.
+     */
+    fun clearAllFlags()
     fun profileByName(name: String): MythosProfile?
     fun save(uuid: UUID)
     fun saveAll()

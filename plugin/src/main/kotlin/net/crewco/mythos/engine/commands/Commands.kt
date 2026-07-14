@@ -366,6 +366,121 @@ class MythosAdminCommand(private val core: MythosEngine) {
         ctx.success("Granted.")
     }
 
+    // ---- the tools you need when you're the only one on the server ----------
+
+    @Subcommand("dev", description = "Solo mode: gates, costs and cooldowns off; crowd-sized numbers become 1.")
+    fun dev(ctx: CommandContext) {
+        val turningOn = !core.dev.enabled
+        core.dev.set(turningOn, ctx.sender.name)
+        if (turningOn) {
+            ctx.reply("<gray>Claim anything. No essence, no queue, no cooldowns.")
+            ctx.reply("<gray>Every story's crowd-sized number is now <white>1<gray>: one kill ends the war,")
+            ctx.reply("<gray>one throne is twelve thrones, one child is six children.")
+            ctx.reply("<dark_gray><i>Story addons opt into this by asking mythos.dev.threshold(n). Ones that don't, don't.")
+        }
+    }
+
+    @Subcommand("reset", minArgs = 1, usage = "/mythos reset <world|story|player|powers|chronicle> [args] confirm")
+    fun reset(ctx: CommandContext) {
+        val what = ctx.args[0].lowercase()
+        val confirmed = ctx.args.lastOrNull().equals("confirm", ignoreCase = true)
+
+        when (what) {
+            "world" -> {
+                if (!confirmed) {
+                    ctx.error("This deletes <white>everything<red>: every role, every era, every profile,")
+                    ctx.error("every point of essence, every epithet, and the whole Chronicle.")
+                    ctx.error("<white>/mythos reset world confirm")
+                    return
+                }
+                core.resetWorld(ctx.sender.name)
+                ctx.success("The world is unmade. It will begin again in a moment.")
+            }
+
+            "story" -> {
+                if (!confirmed) {
+                    ctx.error("Rewinds the ages and strips every mantle. Players <white>keep<red> their essence,")
+                    ctx.error("their epithets and their past lives — so this is the one you want for testing.")
+                    ctx.error("<white>/mythos reset story confirm")
+                    return
+                }
+                core.resetStory(ctx.sender.name)
+                ctx.success("None of it happened. Back to the first age.")
+            }
+
+            "player" -> {
+                if (ctx.size < 2) return ctx.error("/mythos reset player <name> confirm")
+                val target = ctx.requirePlayer(1)
+                if (!confirmed) {
+                    ctx.error("Wipes ${target.name} back to a nameless spirit. <white>/mythos reset player ${target.name} confirm")
+                    return
+                }
+                core.resetPlayer(target.uniqueId, ctx.sender.name)
+                ctx.success("${target.name} has been unwritten.")
+            }
+
+            "powers" -> {
+                val target = if (ctx.size >= 2) ctx.requirePlayer(1) else null
+                core.powers.clearCooldowns(target?.uniqueId)
+                ctx.success(if (target == null) "Every cooldown on the server is gone." else "${target.name}'s cooldowns are gone.")
+            }
+
+            "chronicle" -> {
+                if (!confirmed) return ctx.error("Erases the history of the world. <white>/mythos reset chronicle confirm")
+                core.chronicle.clear()
+                ctx.success("Nobody remembers anything.")
+            }
+
+            else -> ctx.error("world · story · player <name> · powers [player] · chronicle")
+        }
+    }
+
+    @Subcommand("realms", description = "The cosmos: every world an addon declared.")
+    fun realms(ctx: CommandContext) {
+        val realms = core.realms.realms()
+        if (realms.isEmpty()) return ctx.info("There is no cosmos. Install a story addon.")
+        ctx.info("The cosmos:")
+        realms.forEach { realm ->
+            val world = core.realms.world(realm.id)
+            val here = ctx.player?.let { core.realms.mayEnter(it, realm.id) } ?: true
+            val state = when {
+                world == null -> "<red>failed to generate"
+                here -> "<green>you may enter"
+                else -> "<dark_gray>closed to you"
+            }
+            ctx.reply("<dark_gray>  · <white>${realm.id} <dark_gray>(${realm.kind}) — ${realm.displayName} <dark_gray>· $state")
+        }
+        ctx.reply("<dark_gray><i>  /mythos realm <id> <dark_gray><i>to go — if the world will have you.")
+    }
+
+    @Subcommand("realm", minArgs = 1, usage = "/mythos realm <id>", description = "Go somewhere.")
+    fun realm(ctx: CommandContext) {
+        val player = ctx.requireSenderPlayer()
+        val id = ctx.args[0].lowercase()
+        val realm = core.realms.realm(id) ?: return ctx.error("No such realm.")
+
+        // Admins go anywhere. Everyone else is subject to the world's opinion of them.
+        if (!player.hasPermission("mythos.admin") && !core.realms.mayEnter(player, id)) {
+            return ctx.error(realm.refusal)
+        }
+        if (!core.realms.send(player, id, "You go to ${realm.displayName}.")) {
+            ctx.error("That world did not generate. Check the startup log.")
+        }
+    }
+
+    @TabComplete(subcommand = "realm")
+    fun completeRealm(ctx: CommandContext) = core.realms.realms().map { it.id }
+
+    @Subcommand("points", description = "Every extension point anyone has opened or posted to.")
+    fun points(ctx: CommandContext) {
+        val points = core.extensions.points()
+        if (points.isEmpty()) return ctx.info("No addon has opened a point.")
+        ctx.info("Extension points:")
+        points.forEach { point ->
+            ctx.reply("<dark_gray>  · <white>$point <dark_gray>— ${core.extensions.contributions(point).size} contribution(s)")
+        }
+    }
+
     @Subcommand("save", description = "Flush everything to disk.")
     fun save(ctx: CommandContext) {
         core.schedulers.async {
@@ -384,6 +499,13 @@ class MythosAdminCommand(private val core: MythosEngine) {
 
     @TabComplete(subcommand = "seal")
     fun completeSeal(ctx: CommandContext) = core.roles.definitions().map { it.id }
+
+    @TabComplete(subcommand = "reset")
+    fun completeReset(ctx: CommandContext) = when (ctx.size) {
+        0, 1 -> listOf("world", "story", "player", "powers", "chronicle")
+        2 -> Bukkit.getOnlinePlayers().map { it.name } + "confirm"
+        else -> listOf("confirm")
+    }
 }
 
 /**

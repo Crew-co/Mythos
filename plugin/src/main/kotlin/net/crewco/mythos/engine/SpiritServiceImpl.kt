@@ -258,6 +258,13 @@ class SpiritServiceImpl(private val core: MythosEngine) : SpiritService {
             .forEach { grantEssence(it, core.config.essencePerInterval, "watching") }
     }
 
+    internal fun resetAll() {
+        spirits.clear()
+        waiting.clear()
+        interests.clear()
+        offers.clear()
+    }
+
     internal fun load(savedQueue: List<UUID>, savedInterests: Map<UUID, String>) {
         waiting += savedQueue.filter { it !in waiting }
         interests += savedInterests
