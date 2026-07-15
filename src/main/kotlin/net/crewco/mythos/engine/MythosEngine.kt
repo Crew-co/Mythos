@@ -27,6 +27,7 @@ import net.crewco.mythos.engine.commands.PowerCommand
 import net.crewco.mythos.engine.commands.RoleCommand
 import net.crewco.mythos.engine.commands.RolesCommand
 import net.crewco.mythos.engine.commands.SpiritCommand
+import net.crewco.mythos.engine.commands.StoryCommand
 import net.crewco.mythos.hud.HudService
 import net.crewco.mythos.menu.MenuService
 import org.bukkit.Bukkit

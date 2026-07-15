@@ -105,7 +105,7 @@ class RolesCommand(private val core: MythosEngine) {
         roles.groupBy { it.tier }.forEach { (tier, group) ->
             ctx.reply("<dark_gray>— <gray>${tier.displayName}")
             group.forEach { role ->
-                val holders = core.roles.holders(role.id).mapNotNull { core.profiles.profile(it).name }
+                val holders = core.roles.holders(role.id).map { core.profiles.profile(it).name }
                 val who = when {
                     core.roles.isSealed(role.id) -> "<dark_gray><i>sealed"
                     holders.isEmpty() -> "<dark_gray><i>vacant"
