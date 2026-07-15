@@ -17,6 +17,10 @@ val minecraftVersion = foliaApiVersion.substringBefore("-R")
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
+    maven {
+        name = "thenextlvlReleases"
+        url = uri("https://repo.thenextlvl.net/releases")
+    }
 }
 
 dependencies {
@@ -30,6 +34,8 @@ dependencies {
     // Mythos talks to it purely by reflection (see WorldsBridge), so there is deliberately no
     // compile-time dependency on it here — nothing to resolve, nothing to pin, and it's harmless when
     // Worlds isn't installed.
+    implementation("net.thenextlvl:worlds:3.12.4")
+
 }
 
 kotlin {
@@ -49,7 +55,7 @@ paper {
     serverDependencies {
         register("Worlds") {
             load = PaperPluginDescription.RelativeLoadOrder.BEFORE
-            required = false
+            required = true
         }
     }
 }
