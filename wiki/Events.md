@@ -1,6 +1,6 @@
 # Events
 
-Every hook the engine fires. They live in `addon-api`, so every addon sees the **same class object** —
+Every hook the engine fires. They live in the addon API, so every addon sees the **same class object** —
 never shade the API, or Bukkit's `HandlerList` won't match.
 
 ## Roles
