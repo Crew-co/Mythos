@@ -1,6 +1,7 @@
 package net.crewco.mythos.engine
 
 import net.crewco.mythos.MythosPlugin
+import net.crewco.mythos.command.CommandContext.Companion.mm
 import net.crewco.mythos.addon.AddonSchedulers
 import net.crewco.mythos.addon.AddonServices
 import net.crewco.mythos.api.dev.DevService
@@ -15,6 +16,9 @@ import net.crewco.mythos.api.role.RoleService
 import net.crewco.mythos.api.spirit.SpiritService
 import net.crewco.mythos.api.story.ChronicleService
 import net.crewco.mythos.api.story.NarratorService
+import net.crewco.mythos.api.trigger.TriggerService
+import net.crewco.mythos.api.ritual.RitualService
+import net.crewco.mythos.api.director.DirectorService
 import net.crewco.mythos.engine.commands.ChronicleCommand
 import net.crewco.mythos.engine.commands.ClaimCommand
 import net.crewco.mythos.engine.commands.EraCommand
@@ -105,6 +109,22 @@ class MythosEngine(val plugin: MythosPlugin) {
     lateinit var terraform: TerraformServiceImpl
         private set
 
+    /** The world -> beat router: strikes, right-clicks, items, thresholds fire beats instead of /commands. */
+    lateinit var triggers: TriggerServiceImpl
+        private set
+
+    /** Rites: multi-step acted-out beats, composed over triggers. */
+    lateinit var rituals: RitualServiceImpl
+        private set
+
+    /** Audience-adaptivity: resolves beats that can't fire naturally in a thin house. */
+    lateinit var director: DirectorServiceImpl
+        private set
+
+    /** Whether the story is running, paused, or not started. Persisted — survives restarts. */
+    var storyState: StoryState = StoryState.IDLE
+        private set
+
     /** Doors you can walk to. */
     lateinit var gateways: Gateways
         private set
@@ -124,6 +144,9 @@ class MythosEngine(val plugin: MythosPlugin) {
         dev = DevServiceImpl(this)
         realms = RealmServiceImpl(this)
         terraform = TerraformServiceImpl(this, File(dataFolder, "scars.yml"))
+        triggers = TriggerServiceImpl(this)
+        rituals = RitualServiceImpl(this)
+        director = DirectorServiceImpl(this)
         gateways = Gateways(this, File(dataFolder, "gateways.yml"))
         realms.gateways = gateways
         chronicle = ChronicleImpl(this, File(dataFolder, "chronicle.yml"))
@@ -147,12 +170,20 @@ class MythosEngine(val plugin: MythosPlugin) {
         AddonServices.register(DevService::class.java, dev)
         AddonServices.register(RealmService::class.java, realms)
         AddonServices.register(TerraformService::class.java, terraform)
+        AddonServices.register(TriggerService::class.java, triggers)
+        AddonServices.register(RitualService::class.java, rituals)
+        AddonServices.register(DirectorService::class.java, director)
 
         display = MythosHud(this)
         plugin.server.pluginManager.registerEvents(display, plugin)
         display.start()
 
         plugin.server.pluginManager.registerEvents(CoreListener(this), plugin)
+        plugin.server.pluginManager.registerEvents(RoleItemListener(this), plugin)
+
+        // The one world-interaction listener the stories used to each write for themselves.
+        plugin.server.pluginManager.registerEvents(TriggerListener(triggers), plugin)
+        triggers.start()
 
         val realmListener = RealmListener(this)
         plugin.server.pluginManager.registerEvents(realmListener, plugin)
@@ -166,6 +197,7 @@ class MythosEngine(val plugin: MythosPlugin) {
         plugin.commands.register(PowerCommand(this))
         plugin.commands.register(MythosAdminCommand(this))
         plugin.commands.register(ChronicleCommand(this))
+        plugin.commands.register(StoryCommand(this))
 
         // Essence drips to the watching dead.
         schedulers.asyncRepeating(
@@ -184,25 +216,17 @@ class MythosEngine(val plugin: MythosPlugin) {
         // — only then can we know which age the world is in. (Addons load synchronously
         // inside onEnable, so this fires strictly after all of them.)
         schedulers.globalDelayed(1) {
-            val starting = eras.bootstrap()
-
-            /*
-             * BUG, fixed: we used to place players in the same breath as bootstrapping the era.
-             *
-             * But starting an age is a TRANSITION — the prologue plays, the world holds still, and
-             * `current` is not set until the interlude ends. So PlayerBecameSpiritEvent fired while
-             * currentId() was still "", every story addon's "is this my era?" check said no, and the
-             * spirits of the Age of Chaos were left standing in the overworld instead of the Void.
-             *
-             * Wait for the age to actually begin.
-             */
-            val settle = if (starting) config.interludeTicks + 40 else 0
-            schedulers.globalDelayed(settle) {
-                Bukkit.getOnlinePlayers().forEach { player ->
-                    val role = roles.roleOf(player.uniqueId)
-                    schedulers.entity(player) {
-                        if (role != null) roles.applyBody(player, role) else spirits.makeSpirit(player, "the world was remade")
-                    }
+            if (storyState == StoryState.IDLE) {
+                logger.info("The story is not running. An admin begins it with: /mythos story start")
+            } else {
+                // The chain resumes itself: bootstrap() re-establishes the persisted age (or begins the
+                // first). Player placement waits for the interlude so it lands in the right world, and
+                // then we tell everyone where the story picked up.
+                val starting = eras.bootstrap()
+                val settle = if (starting) config.interludeTicks + 40 else 0
+                schedulers.globalDelayed(settle) {
+                    placeAllPlayers("the world was remade")
+                    announceResume()
                 }
             }
         }
@@ -230,6 +254,79 @@ class MythosEngine(val plugin: MythosPlugin) {
         if (::chronicle.isInitialized) chronicle.save()
         if (::terraform.isInitialized) terraform.save()
         if (::gateways.isInitialized) gateways.save()
+    }
+
+    // ---- the story: start once, run across restarts, until stopped or paused -------------
+
+    fun startStory(by: String): String {
+        when (storyState) {
+            StoryState.RUNNING -> return "The story is already running."
+            StoryState.PAUSED -> return "The story is paused — resume it with /mythos story resume."
+            StoryState.IDLE -> {}
+        }
+        storyState = StoryState.RUNNING
+        saveState()
+        logger.info("Story started by $by.")
+        schedulers.global {
+            val starting = eras.bootstrap()
+            val settle = if (starting) config.interludeTicks + 40 else 0
+            schedulers.globalDelayed(settle) { placeAllPlayers("the story begins") }
+        }
+        return "The story begins."
+    }
+
+    fun stopStory(by: String): String {
+        if (storyState == StoryState.IDLE) return "The story isn't running."
+        storyState = StoryState.IDLE
+        saveState()
+        Bukkit.getServer().sendMessage(mm("<red>The story has been stopped. <gray>Its place is kept — an admin can start it again."))
+        logger.info("Story stopped by $by.")
+        return "The story is stopped."
+    }
+
+    fun pauseStory(by: String): String {
+        if (storyState != StoryState.RUNNING) return "The story isn't running."
+        storyState = StoryState.PAUSED
+        saveState()
+        Bukkit.getServer().sendMessage(mm("<gold>The story pauses. <gray>Nothing more will happen until it resumes. <dark_gray>/story"))
+        logger.info("Story paused by $by.")
+        return "The story is paused."
+    }
+
+    fun resumeStory(by: String): String {
+        if (storyState != StoryState.PAUSED) return "The story isn't paused."
+        storyState = StoryState.RUNNING
+        saveState()
+        Bukkit.getServer().sendMessage(mm("<green>The story resumes."))
+        logger.info("Story resumed by $by.")
+        return "The story resumes."
+    }
+
+    fun storySummary(): String {
+        val where = eras.current()?.let { "at '${it.displayName}'" } ?: "with no age current"
+        return when (storyState) {
+            StoryState.IDLE -> "The story is not running."
+            StoryState.RUNNING -> "The story is running, $where."
+            StoryState.PAUSED -> "The story is paused, $where."
+        }
+    }
+
+    private fun placeAllPlayers(reason: String) {
+        Bukkit.getOnlinePlayers().forEach { player ->
+            val role = roles.roleOf(player.uniqueId)
+            schedulers.entity(player) {
+                if (role != null) roles.applyBody(player, role) else spirits.makeSpirit(player, reason)
+            }
+        }
+    }
+
+    private fun announceResume() {
+        if (storyState == StoryState.PAUSED) {
+            Bukkit.getServer().sendMessage(mm("<gold>The story is paused where it left off. <gray>Run <white>/story<gray> to see where."))
+            return
+        }
+        val era = eras.current() ?: return
+        Bukkit.getServer().sendMessage(mm("<gray>The story resumes at <white>${era.displayName}<gray>. <dark_gray>Run /story to catch up."))
     }
 
     // ---- state --------------------------------------------------------------
@@ -262,6 +359,8 @@ class MythosEngine(val plugin: MythosPlugin) {
         spirits.load(state.getStringList("spirits.queue").mapNotNull { it.toUuidOrNull() }, interests)
         dev.load(state.getBoolean("dev", false))
         if (dev.enabled) logger.warning("SOLO MODE IS ON. Gates, costs and cooldowns are off for admins.")
+        storyState = state.getString("story.state")?.let { runCatching { StoryState.valueOf(it) }.getOrNull() }
+            ?: if (eras.currentId().isNotEmpty()) StoryState.RUNNING else StoryState.IDLE
     }
 
     // ---- the reset ----------------------------------------------------------
@@ -350,6 +449,7 @@ class MythosEngine(val plugin: MythosPlugin) {
     fun saveStateNow() {
         val state = YamlConfiguration()
         state.set("dev", dev.enabled)
+        state.set("story.state", storyState.name)
         state.set("era.current", eras.snapshotCurrent())
         state.set("era.completed", eras.snapshotCompleted())
         state.set("era.passed", eras.snapshotPassed())

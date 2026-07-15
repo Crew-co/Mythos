@@ -166,6 +166,7 @@ class EraServiceImpl(private val core: MythosEngine) : EraService {
 
     override fun complete(eraId: String, objectiveId: String, reason: String) {
         core.schedulers.global {
+            if (core.storyState == StoryState.PAUSED) return@global // the story is held; no beat is struck
             val era = eras[eraId] ?: return@global
             val objective = objectives(eraId).firstOrNull { it.id == objectiveId } ?: return@global
             if (!completed.add("$eraId:$objectiveId")) return@global // already struck

@@ -30,11 +30,14 @@ dependencies {
     // Bundled, since the server doesn't ship Kotlin's runtime.
     implementation(kotlin("stdlib"))
 
-    // NOTE: the 'Worlds' plugin is an OPTIONAL soft dependency used to create realm worlds on Folia.
-    // Mythos talks to it purely by reflection (see WorldsBridge), so there is deliberately no
-    // compile-time dependency on it here — nothing to resolve, nothing to pin, and it's harmless when
-    // Worlds isn't installed.
-    implementation("net.thenextlvl:worlds:3.12.4")
+    // The 'Worlds' plugin is an OPTIONAL soft dependency used to create realm worlds on Folia.
+    // WorldsBridge imports net.thenextlvl.worlds.api.* directly, so it must be compileOnly, NEVER
+    // implementation: shadow bundles an implementation dependency into Mythos.jar, and then the
+    // bundled net.thenextlvl.worlds.api.WorldsProvider is a DIFFERENT class from the one the real
+    // Worlds plugin implements — so `getPlugin("Worlds") as? WorldsProvider` returns null and every
+    // realm world silently fails to create. The runtime class comes from the Worlds plugin itself,
+    // reached through the soft serverDependency declared in the `paper { }` block below.
+    compileOnly("net.thenextlvl:worlds:3.12.4")
 
 }
 
@@ -77,6 +80,11 @@ val apiJar by tasks.registering(Jar::class) {
         include("net/crewco/mythos/command/**")
         include("net/crewco/mythos/hud/**")
         include("net/crewco/mythos/menu/**")
+        // Kotlin compiles top-level functions (the `beats { line() }` DSL, and any other package-level
+        // declaration in the API) into file-facade classes indexed by META-INF/*.kotlin_module. Ship
+        // the classes without that index and a consumer resolves every *class* but none of the
+        // top-level *functions* — the exact "unresolved reference: beats" an addon would hit. Keep it.
+        include("META-INF/*.kotlin_module")
         // Host implementations live in those packages too — keep them out of the API surface.
         exclude("net/crewco/mythos/addon/AddonClassLoader*")
         exclude("net/crewco/mythos/addon/AddonManager*")

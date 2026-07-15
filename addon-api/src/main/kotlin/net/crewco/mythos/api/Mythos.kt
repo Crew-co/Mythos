@@ -13,6 +13,9 @@ import net.crewco.mythos.api.role.RoleService
 import net.crewco.mythos.api.spirit.SpiritService
 import net.crewco.mythos.api.story.ChronicleService
 import net.crewco.mythos.api.story.NarratorService
+import net.crewco.mythos.api.trigger.TriggerService
+import net.crewco.mythos.api.ritual.RitualService
+import net.crewco.mythos.api.director.DirectorService
 
 /**
  * The five systems the **Mythos plugin** publishes. This is the whole engine, as far
@@ -68,6 +71,15 @@ class Mythos(
 
     /** Undo, for the world. If your story floods it, your story can put it back. */
     val terraform: TerraformService,
+
+    /** The world, as a way to fire a beat: strikes, right-clicks, items, thresholds. Not the chat box. */
+    val triggers: TriggerService,
+
+    /** Multi-step acted-out rites: build the Horse, forge the sickle, fifty on the deck. */
+    val rituals: RitualService,
+
+    /** Keeps the story moving when the house is too small or a key role is unheld. */
+    val director: DirectorService,
 ) {
     companion object {
         fun from(context: AddonContext): Mythos = Mythos(
@@ -82,6 +94,9 @@ class Mythos(
             dev = context.service<DevService>() ?: missing("DevService"),
             realms = context.service<RealmService>() ?: missing("RealmService"),
             terraform = context.service<TerraformService>() ?: missing("TerraformService"),
+            triggers = context.service<TriggerService>() ?: missing("TriggerService"),
+            rituals = context.service<RitualService>() ?: missing("RitualService"),
+            director = context.service<DirectorService>() ?: missing("DirectorService"),
         )
 
         private fun missing(what: String): Nothing = error(

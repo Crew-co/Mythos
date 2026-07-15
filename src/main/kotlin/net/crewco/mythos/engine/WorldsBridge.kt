@@ -42,10 +42,19 @@ object WorldsBridge {
      * completing with the live world, or null if the request couldn't be issued. Call only when
      * [isAvailable] is true.
      */
-    fun create(mythos: Plugin, realm: RealmDefinition): CompletableFuture<World>? = runCatching {
+    fun create(mythos: Plugin, realm: RealmDefinition): CompletableFuture<World>? {
         // The Worlds plugin implements WorldsProvider — its instance is the API entry point.
-        val provider = Bukkit.getPluginManager().getPlugin("Worlds") as? WorldsProvider ?: return null
-        val id = realm.id.lowercase()
+        val provider = Bukkit.getPluginManager().getPlugin("Worlds") as? WorldsProvider
+        if (provider == null) {
+            mythos.logger.warning(
+                "Realm '${realm.id}': the Worlds plugin is present but not usable as a WorldsProvider. This almost " +
+                    "always means the Worlds API was bundled into Mythos (implementation) rather than compileOnly, or " +
+                    "the installed Worlds version differs from the one Mythos compiles against (3.12.x).",
+            )
+            return null
+        }
+        return runCatching {
+            val id = realm.id.lowercase()
 
         // All Mythos realms are NORMAL-environment overworlds; the Bukkit generator overrides terrain.
         val levelStem = when (realm.kind) {
@@ -65,6 +74,9 @@ object WorldsBridge {
             .generator(Generator(mythos, id))
             .build()
 
-        level.createAsync()
-    }.getOrNull()
+            level.createAsync()
+        }.onFailure {
+            mythos.logger.warning("Realm '${realm.id}': Worlds threw while creating '${realm.worldName}': $it")
+        }.getOrNull()
+    }
 }

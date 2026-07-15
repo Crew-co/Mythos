@@ -48,7 +48,8 @@ class CoreListener(private val core: MythosEngine) : Listener {
                 return@entity
             }
 
-            // Roleless. On a big server there is usually somewhere to put them.
+            // Roleless. If the story hasn't been started, they simply wait as themselves.
+            if (core.storyState == StoryState.IDLE) return@entity
             val fallback = core.config.defaultRole
             if (fallback.isNotEmpty() && core.roles.isOpen(fallback)) {
                 core.schedulers.global { core.roles.assign(player.uniqueId, fallback, "born into the world") }

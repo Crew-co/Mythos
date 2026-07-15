@@ -92,6 +92,9 @@ class AddonManager(private val plugin: MythosPlugin) {
             // extension points, and any menu it defined that someone is still looking at.
             // Both are objects whose class is about to have no classloader behind it.
             runCatching { plugin.engine.extensions.dropFrom(entry.classLoader) }
+            runCatching { plugin.engine.triggers.dropFrom(entry.classLoader) }
+            runCatching { plugin.engine.rituals.dropFrom(entry.classLoader) }
+            runCatching { plugin.engine.director.dropFrom(entry.classLoader) }
             runCatching { plugin.menus.closeAllFrom(entry.classLoader) }
 
             runCatching { entry.classLoader.close() }

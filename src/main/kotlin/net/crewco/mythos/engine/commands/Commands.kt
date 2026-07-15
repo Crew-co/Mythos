@@ -8,6 +8,7 @@ import net.crewco.mythos.command.Subcommand
 import net.crewco.mythos.command.TabComplete
 import net.crewco.mythos.engine.AltarMenu
 import net.crewco.mythos.engine.MythosEngine
+import net.crewco.mythos.engine.StoryState
 import org.bukkit.Bukkit
 
 /**
@@ -310,6 +311,35 @@ class PowerCommand(private val core: MythosEngine) {
         ctx.player?.let { core.powers.powersOf(it.uniqueId).map { power -> power.id } }.orEmpty()
 }
 
+@Command(name = "story", aliases = ["recap"], description = "Where the story stands, and how it got here.")
+class StoryCommand(private val core: MythosEngine) {
+
+    @Default
+    fun recap(ctx: CommandContext) {
+        val era = core.eras.current()
+        if (era == null || core.storyState == StoryState.IDLE) {
+            ctx.info("The story has not begun.")
+            return
+        }
+
+        ctx.reply("<gold><b>${era.displayName}</b> <gray>— <i>${era.subtitle}</i>")
+        if (core.storyState == StoryState.PAUSED) ctx.reply("<yellow>The story is paused.")
+
+        core.eras.objectives(era.id)
+            .filter { !it.hidden || core.eras.isComplete(era.id, it.id) }
+            .forEach { o ->
+                val done = core.eras.isComplete(era.id, o.id)
+                ctx.reply(if (done) "  <green>✔ <gray>${o.description}" else "  <dark_gray>▢ <gray>${o.description}")
+            }
+
+        val recent = core.chronicle.entries(3)
+        if (recent.isNotEmpty()) {
+            ctx.reply("<dark_gray><i>Lately:")
+            recent.forEach { ctx.reply("  <dark_gray>• ${it.text}") }
+        }
+    }
+}
+
 @Command(name = "mythos", permission = "mythos.admin", description = "Bend the story to your will.")
 class MythosAdminCommand(private val core: MythosEngine) {
 
@@ -356,6 +386,30 @@ class MythosAdminCommand(private val core: MythosEngine) {
         val era = core.eras.current() ?: return ctx.error("No era.")
         core.eras.complete(era.id, ctx.args[0], "willed by ${ctx.sender.name}")
         ctx.success("Struck.")
+    }
+
+    @Subcommand("forward", aliases = ["next"], description = "Move the story on: strike the next required beat, or turn the age.")
+    fun forward(ctx: CommandContext) {
+        if (ctx.arg(0)?.lowercase() in setOf("preview", "peek", "?")) {
+            return ctx.info(core.director.preview() ?: "No era is running.")
+        }
+        core.schedulers.global {
+            val what = core.director.forward("forwarded by ${ctx.sender.name}")
+            ctx.reply(if (what != null) "<green>» $what" else "<gray>Nothing to forward — no era is running.")
+        }
+    }
+
+    @Subcommand("story", minArgs = 1, usage = "/mythos story <start|stop|pause|resume|status>", description = "Run the story: begin it, hold it, or halt it.")
+    fun story(ctx: CommandContext) {
+        val result = when (ctx.args[0].lowercase()) {
+            "start" -> core.startStory(ctx.sender.name)
+            "stop" -> core.stopStory(ctx.sender.name)
+            "pause" -> core.pauseStory(ctx.sender.name)
+            "resume" -> core.resumeStory(ctx.sender.name)
+            "status", "state" -> core.storySummary()
+            else -> return ctx.error("start | stop | pause | resume | status")
+        }
+        ctx.info(result)
     }
 
     @Subcommand("essence", minArgs = 2, usage = "/mythos essence <player> <amount>")
