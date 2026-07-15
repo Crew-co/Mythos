@@ -135,6 +135,13 @@ class RealmServiceImpl(private val core: MythosEngine) : RealmService {
         cacheGenerators()
         val pending = ArrayList<RealmDefinition>()
 
+        if (Schedulers.isFolia) {
+            core.logger.info(
+                if (WorldsBridge.isAvailable()) "Worlds plugin detected — realm worlds will be created through it."
+                else "Worlds plugin NOT detected — extra realms will be unavailable. Install Worlds, or a Folia world manager.",
+            )
+        }
+
         realms.values.forEach { realm ->
             val key = realm.id.lowercase()
 
