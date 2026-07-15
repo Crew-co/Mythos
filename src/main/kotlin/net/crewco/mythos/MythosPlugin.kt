@@ -74,9 +74,12 @@ class MythosPlugin : JavaPlugin() {
         addons = AddonManager(this)
         addons.loadAll()
 
-        // Every addon has now declared its realms. Build the cosmos — worlds can only be
-        // created during startup, and this is the last moment we're still in it.
-        engine.createRealms()
+        // Every addon has now declared its realms. Build the cosmos one tick from now — by then the
+        // server has finished starting and every plugin is enabled, including an optional world
+        // manager like Worlds (which we ask to create realm worlds on Folia). Doing this inline in
+        // onEnable raced plugin load order: if Worlds hadn't enabled yet, every realm was reported
+        // missing even though it was installed.
+        schedulers.globalDelayed(1L) { engine.createRealms() }
 
         logger.info("Enabled ${pluginMeta.name} v${pluginMeta.version} (Folia: ${Schedulers.isFolia})")
     }

@@ -55,7 +55,7 @@ paper {
     serverDependencies {
         register("Worlds") {
             load = PaperPluginDescription.RelativeLoadOrder.BEFORE
-            required = true
+            required = false
         }
     }
 }
