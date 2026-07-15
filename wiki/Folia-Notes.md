@@ -58,7 +58,14 @@ Never touch a file from a region thread.
 work across ticks — putting 200,000 blocks back in one go is how you make a Folia server stop
 answering.
 
-## Worlds can only be created during startup
+## Worlds
 
-Which is why `realms.register` is declarative and the engine builds them all at the tail of
-`onEnable`.
+`realms.register` is declarative; the engine builds them all at the tail of `onEnable`.
+
+On **Paper** that uses the ordinary `WorldCreator` and realms generate on first boot. On **Folia**
+the Bukkit world API is unimplemented — `Bukkit.createWorld()` throws
+([Folia#134](https://github.com/PaperMC/Folia/issues/134)) — so Mythos hands loading to the
+**[Worlds](https://modrinth.com/project/gBIw3Gvy)** plugin (a soft dependency) if present, passing
+`Mythos:<id>` as the generator so the terrain still comes from Mythos. Without Worlds, load each
+world with any Folia world manager under generator `Mythos:<id>` and Mythos adopts it. Gaia always
+works. See [Realms-and-Gateways](Realms-and-Gateways.md).
